@@ -1,0 +1,60 @@
+{
+  // 按 F5 直接使用列表中的第一项：① 连接测试
+  // 想跑别的配置：按 F5 旁边的下拉箭头选择，或 Ctrl+Shift+P → "调试: 选择并开始调试"
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "① 连接测试（probe_simulator.py）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/probe_simulator.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
+      "name": "② 连接测试 + 全链路（--enter）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/probe_simulator.py",
+      "cwd": "${workspaceFolder}",
+      "args": ["--enter"],
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
+      "name": "③ 机器狗策略（robot.py · 需先创建该文件）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/robot.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
+      "name": "④ 运行当前文件",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1"
+      }
+    }
+  ]
+}

@@ -40,6 +40,12 @@ output/
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
 .idea/
 .DS_Store
 Thumbs.db
+
+# ---- 自动生成的中间产物 ----
+_extracted/
+logs/

@@ -1,0 +1,13 @@
+{
+  "base_url": "http://127.0.0.1:2026",
+  "move_speed_mps": 5,
+  "measure_action_s": 5,
+  "channel_switch_s": 1,
+  "clear_miss_action_s": 3,
+  "clear_hit_action_s": 5,
+  "near_threshold_m": 5,
+  "clear_radius_m": 20,
+  "arena_radius_m": 1800,
+  "http_timeout_s": 5,
+  "log_dir": "logs"
+}
