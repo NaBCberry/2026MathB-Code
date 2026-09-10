@@ -1,5 +1,4 @@
 {
-    "python.analysis.stubPath": "C:\\Users\\asus\\.kendryte\\k230_canmv_pylance\\624fe94f8f67b8ca\\typings",
     "python.defaultInterpreterPath": "D:\\Python\\Python314\\python.exe",
     "python.terminal.activateEnvironment": true,
     "terminal.integrated.env.windows": {

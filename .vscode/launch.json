@@ -8,6 +8,7 @@
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/probe_simulator.py",
+      "args": ["--robot-id", "${input:robotId}"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "justMyCode": true,
@@ -21,8 +22,8 @@
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/probe_simulator.py",
+      "args": ["--robot-id", "${input:robotId}", "--enter"],
       "cwd": "${workspaceFolder}",
-      "args": ["--enter"],
       "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
@@ -31,10 +32,11 @@
       }
     },
     {
-      "name": "③ 机器狗策略（robot.py · 需先创建该文件）",
+      "name": "③ 机器狗策略（robot.py）",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/robot.py",
+      "args": ["--robot-id", "${input:robotId}"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "justMyCode": true,
@@ -55,6 +57,13 @@
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1"
       }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "robotId",
+      "type": "promptString",
+      "description": "参赛队号（须与模拟器登录队号逐字节一致）"
     }
   ]
 }

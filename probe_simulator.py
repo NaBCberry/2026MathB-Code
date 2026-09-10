@@ -2,13 +2,15 @@
 """模拟器连接测试：探测本机模拟器端口的连通性与接口响应。
 
 用法：
-    python probe_simulator.py                 # 使用 config.json 中的配置
-    python probe_simulator.py --url http://127.0.0.1:2026
+    python probe_simulator.py --robot-id <参赛队号>
+    python probe_simulator.py --robot-id <参赛队号> --enter
+    python probe_simulator.py --robot-id <参赛队号> --url http://127.0.0.1:2026
 
 说明：
     - 非测试期间（倒计时中 / 未开始 / 已结束）机器人接口是关闭的，
       此时连接失败或返回非 JSON 体都属于正常现象。
     - 本脚本只做只读探测。除可选的 --enter 外不会改变模拟器状态。
+    - 参赛队号只从命令行传入，不落盘，避免被提交进版本库。
 """
 
 from __future__ import annotations
@@ -19,17 +21,9 @@ import socket
 import time
 import urllib.error
 import urllib.request
-from pathlib import Path
 from urllib.parse import urlparse
 
-ROOT = Path(__file__).resolve().parent
-CONFIG = ROOT / "config.json"
-
-
-def load_config() -> dict:
-    if CONFIG.exists():
-        return json.loads(CONFIG.read_text(encoding="utf-8"))
-    return {"base_url": "http://127.0.0.1:2026", "robot_id": "<参赛队号>"}
+from sim_client import BASE_URL
 
 
 def tcp_probe(host: str, port: int, timeout: float = 3.0) -> tuple[bool, str]:
@@ -74,10 +68,10 @@ def http_post(base_url: str, path: str, payload: dict, timeout: float = 5.0):
 
 
 def main() -> int:
-    cfg = load_config()
     parser = argparse.ArgumentParser(description="模拟器连接测试")
-    parser.add_argument("--url", default=cfg["base_url"], help="模拟器接口地址")
-    parser.add_argument("--robot-id", default=cfg["robot_id"], help="参赛队号")
+    parser.add_argument("--robot-id", required=True,
+                        help="参赛队号（须与模拟器登录队号逐字节一致）")
+    parser.add_argument("--url", default=BASE_URL, help="模拟器接口地址")
     parser.add_argument("--enter", action="store_true", help="额外尝试调用 /enter（会占用测试窗口）")
     args = parser.parse_args()
 
