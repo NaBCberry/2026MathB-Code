@@ -1,0 +1,45 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ---- Jupyter ----
+*.ipynb.bak
+
+# ---- MATLAB ----
+*.asv
+*.m~
+slprj/
+*.slxc
+
+# ---- LaTeX / 论文编译产物 ----
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# ---- 数据与输出（按需保留） ----
+data/raw/
+output/
+*.h5
+*.mat
+*.pkl
+*.npz
+
+# ---- 编辑器 / 系统 ----
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
