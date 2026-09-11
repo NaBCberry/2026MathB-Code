@@ -101,6 +101,11 @@
   .b-err{background:#fee2e2;color:#b91c1c}
   .glog{font-size:11px;color:var(--ink2);max-height:74px;overflow:auto;margin-top:8px;
         font-variant-numeric:tabular-nums}
+  .algobox{margin:0 0 10px;font-size:12px;color:var(--ink2)}
+  .algobox summary{cursor:pointer;color:var(--ink2);font-size:12px}
+  .algotext{white-space:pre-wrap;margin:8px 0 0;font-size:12px;line-height:1.6;
+            color:var(--ink2);font-family:inherit}
+  .algotag{font-size:11px;color:var(--ink3)}
 </style>
 </head>
 <body>
@@ -112,6 +117,7 @@
   <label class="ck"><input type="checkbox" id="live" checked> 自动刷新</label>
   <label class="ck"><input type="checkbox" id="onlysig"> 只看有信号/清除的行</label>
   <span class="grow"></span>
+  <span id="filealgo" class="algotag"></span>
   <span id="status" class="muted"></span>
 </header>
 
@@ -123,6 +129,16 @@
       <span id="dbgBudget" class="muted"></span>
     </h2>
     <div class="body dbg">
+      <div class="dbgrow">
+        <label>算法 <select id="algo" title="选择要跑的算法/题目"></select></label>
+        <label>参数 <input id="algoParams" placeholder='{"ring_r":1200}' style="width:280px"></label>
+        <button id="algoReset">恢复默认参数</button>
+        <span id="algoInfo" class="muted"></span>
+      </div>
+      <details class="algobox" id="algoBox">
+        <summary>算法说明（点开看这套算法怎么做、可调什么、怎么改或新增）</summary>
+        <div id="algoDescBody"></div>
+      </details>
       <div class="dbgrow">
         <label class="ck"><input type="checkbox" id="dbgDelay"> 每步延迟</label>
         <label>前 <input type="number" id="dbgBefore" step="0.1" min="0" style="width:62px"> s</label>
@@ -212,6 +228,78 @@ let view = {k:1, cx:0, cy:0, init:false};
 /* ---------------------------------------------------------------- 数据 */
 async function api(path, opt){ const r = await fetch(path, opt); if(!r.ok) throw new Error(r.status); return r.json(); }
 
+const esc = s => String(s==null?"":s).replace(/[&<>"]/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ------------------------------------------------------ 算法注册表（可选算法）
+   清单来自 /api/algorithms，也就是 algorithms/ 目录；加一个新算法只要在那里加
+   一个带 SPEC 与 build 的模块，**这个网页一行都不用改**。 */
+let ALGOS = [], ALGO = null;
+
+function algoExtra(a){
+  return [`实现位置：${a.entry || "—"}`,
+          `默认参数：${JSON.stringify(a.params || {})}`,
+          "改上面的参数框即可覆盖默认值（留空则用默认值）；跑的每一局都会把算法 id " +
+          "与参数写进 trace 的 meta，事后回放也知道是哪套算法跑的。"].join("\n");
+}
+
+function selectAlgo(id){
+  ALGO = ALGOS.find(a => a.id === id) || null;
+  if(!ALGO) return;
+  $("algoParams").value = JSON.stringify(ALGO.params || {});
+  $("algoInfo").textContent = ALGO.summary || "";
+  $("algoDescBody").innerHTML =
+      `<p><b>${esc(ALGO.name)}</b>（${esc(ALGO.problem)}） · id <code>${esc(ALGO.id)}</code></p>`
+    + `<div class="algotext">${esc(ALGO.description || "")}</div>`
+    + `<div class="algotext">${esc(algoExtra(ALGO))}</div>`;
+}
+
+async function loadAlgos(){
+  const sel = $("algo");
+  try{
+    const r = await api("/api/algorithms");
+    ALGOS = r.algorithms || [];
+    if(!ALGOS.length) throw new Error(r.error || "算法注册表为空");
+    sel.innerHTML = "";
+    for(const a of ALGOS){
+      const o = document.createElement("option");
+      o.value = a.id;
+      o.textContent = `${a.name}（${a.problem}）`;
+      o.title = a.summary || "";
+      sel.appendChild(o);
+    }
+    const pick = ALGOS.find(a => a.id === r.default) || ALGOS[0];
+    sel.value = pick.id;
+    selectAlgo(pick.id);
+    const bad = r.errors ? Object.keys(r.errors) : [];
+    if(bad.length){
+      $("algoInfo").textContent += "　⚠ 未加载：" +
+        bad.map(m => m + "（" + r.errors[m] + "）").join("；");
+    }
+  }catch(e){
+    sel.innerHTML = '<option value="">（算法清单拉取失败）</option>';
+    $("algoInfo").textContent = String(e.message || e);
+  }
+}
+
+/* 收集"当前选中的算法 + 参数框里的 JSON"，出错就返回 null（调用方中止）。 */
+function algoBody(){
+  const raw = $("algoParams").value.trim();
+  let params = {};
+  if(raw){
+    try{ params = JSON.parse(raw); }
+    catch(e){
+      alert("参数不是合法 JSON：" + e.message + "\n留空表示用算法的默认参数。");
+      return null;
+    }
+    if(typeof params !== "object" || params === null || Array.isArray(params)){
+      alert('参数必须是一个 JSON 对象，例如 {"ring_r":1200}');
+      return null;
+    }
+  }
+  return {algorithm: $("algo").value, params};
+}
+
 async function loadList(){
   const list = await api("/api/traces");
   const sel = $("sel"); sel.innerHTML = "";
@@ -232,8 +320,18 @@ async function loadTrace(name){
   const r = await api("/api/trace?name=" + encodeURIComponent(name));
   DATA = {meta:r.meta||{}, summary:r.summary||{}, events:r.events||[], name:r.name};
   MODEL = buildModel(DATA);
+  showFileAlgo();
   view.init = false;
   render();
+}
+
+/* 顶部小字：当前这局 trace 是用哪套算法跑的 */
+function showFileAlgo(){
+  const m = (DATA && DATA.meta) || {};
+  const ps = m.algorithm_params && Object.keys(m.algorithm_params).length
+           ? "  " + JSON.stringify(m.algorithm_params) : "";
+  $("filealgo").textContent =
+    m.algorithm_name ? `本局算法：${m.algorithm_name}${ps}` : "";
 }
 
 function snapshot(st){
@@ -301,6 +399,8 @@ function renderCards(){
     ["移动路程", fmt(T.move_m,0)+" m", `耗时 ${fmt(T.move_s)} s`],
     ["检测次数", T.n_measure ?? 0, `换频道 ${T.n_switch ?? 0} 次`],
     ["清除次数", T.n_clear ?? 0, `其中落空 ${T.n_clear_miss ?? 0} 次`],
+    ["本局算法", meta.algorithm_name || "—",
+     meta.algorithm_problem ? `${meta.algorithm_problem} · ${meta.algorithm || ""}` : ""],
   ];
   $("cards").innerHTML = cards.map(c=>
     `<div class="card"><div class="k">${c[0]}</div><div class="v">${c[1]}</div>
@@ -721,9 +821,14 @@ async function gateTick(){
 function bind(){
   $("sel").onchange = e => { CUR = e.target.value; loadTrace(CUR); };
   $("reload").onclick = () => loadTrace(CUR);
+  $("algo").onchange = () => selectAlgo($("algo").value);
+  $("algoReset").onclick = () => selectAlgo($("algo").value);
   $("newsample").onclick = async () => {
+    const pick = algoBody(); if(!pick) return;
     $("status").textContent = "正在生成新案例…";
-    const r = await api("/api/new?seed="+Math.floor(Math.random()*90000+1), {method:"POST"});
+    const r = await api("/api/new?seed="+Math.floor(Math.random()*90000+1),
+      {method:"POST", headers:{"Content-Type":"application/json"},
+       body: JSON.stringify(pick)});
     const t0 = Date.now();
     const wait = setInterval(async ()=>{
       const list = await loadList();
@@ -750,12 +855,18 @@ function bind(){
   $("runLive").onclick = async ()=>{
     const rid = $("runId").value.trim();
     if(!rid){ alert("请先填参赛队号"); return; }
+    const pick = algoBody(); if(!pick) return;
+    if(!confirm(`接模拟器跑一局：\n算法：${ALGO ? ALGO.name : $("algo").value}\n`
+        + `参数：${JSON.stringify(pick.params)}\n确认开始？`)) return;
     const r = await api("/api/run", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({mode:"live", robot_id:rid})});
+      body: JSON.stringify(Object.assign({mode:"live", robot_id:rid}, pick))});
     CUR = r.name; await loadList(); $("sel").value = CUR; gateTick();
   };
   $("runMock").onclick = async ()=>{
-    const r = await api("/api/new?seed="+Math.floor(Math.random()*90000+1), {method:"POST"});
+    const pick = algoBody(); if(!pick) return;
+    const r = await api("/api/new?seed="+Math.floor(Math.random()*90000+1),
+      {method:"POST", headers:{"Content-Type":"application/json"},
+       body: JSON.stringify(pick)});
     CUR = r.name;
     setTimeout(async ()=>{ await loadList(); $("sel").value = CUR; await loadTrace(CUR); }, 600);
   };
@@ -834,6 +945,7 @@ function applyDelta(t){
   const added = appendEvents(MODEL, fresh);
   if(fresh.length) DATA.events = DATA.events.concat(fresh);
   MODEL.meta = DATA.meta; MODEL.summary = DATA.summary;
+  if(metaChanged) showFileAlgo();
   renderCards();
   renderMap();
   if(added) prependRows(MODEL.rows.slice(-added));
@@ -862,6 +974,7 @@ async function tick(){
 
 (async function init(){
   bind();
+  await loadAlgos();
   gateTick();
   const list = await loadList();
   if(list.length){ CUR = CUR || list[0].name; $("sel").value = CUR; await loadTrace(CUR); }

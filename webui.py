@@ -29,6 +29,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import trace_client
+import algorithms
 from step_gate import StepGate, load_debug_config
 
 ROOT = Path(__file__).resolve().parent
@@ -147,7 +148,8 @@ def read_trace(name: str, since: int = 0) -> dict:
 
 
 def run_blocking(mode: str, name: str, *, seed: int | None = None, robot_id: str = "",
-                 url: str = "http://127.0.0.1:2026", log_dir: str = "logs") -> dict | None:
+                 url: str = "http://127.0.0.1:2026", log_dir: str = "logs",
+                 algorithm: str = "", params: dict | None = None) -> dict | None:
     """同步跑一局并登记状态（在后台线程里调用）。"""
     with STATE["lock"]:
         STATE["running"] = name
@@ -155,7 +157,8 @@ def run_blocking(mode: str, name: str, *, seed: int | None = None, robot_id: str
     try:
         return trace_client.run_session(
             mode=mode, out=STATE["trace_dir"] / name, seed=seed,
-            robot_id=robot_id, url=url, log_dir=log_dir, gate=STATE["gate"])
+            robot_id=robot_id, url=url, log_dir=log_dir, gate=STATE["gate"],
+            algorithm=algorithm, params=params)
     except Exception as exc:                          # noqa: BLE001
         STATE["error"] = f"{type(exc).__name__}: {exc}"
         print(f"[webui] {mode} 运行结束：", exc)
@@ -166,16 +169,28 @@ def run_blocking(mode: str, name: str, *, seed: int | None = None, robot_id: str
 
 
 def start_run(mode: str, *, seed: int | None = None, robot_id: str = "",
-              url: str = "http://127.0.0.1:2026", log_dir: str = "logs") -> str:
+              url: str = "http://127.0.0.1:2026", log_dir: str = "logs",
+              algorithm: str = "", params: dict | None = None) -> str:
     """后台跑一局（离线 mock 或实机），返回 trace 文件名。"""
     name = f"mock-seed{seed}.jsonl" if mode == "mock" else "live.jsonl"
     with STATE["lock"]:
         if STATE["running"]:
             return STATE["running"]
     threading.Thread(target=lambda: run_blocking(mode, name, seed=seed, robot_id=robot_id,
-                                                 url=url, log_dir=log_dir),
+                                                 url=url, log_dir=log_dir,
+                                                 algorithm=algorithm, params=params),
                      daemon=True).start()
     return name
+
+
+def algo_payload() -> dict:
+    """给网页的算法清单：默认 id + 每个算法的身份、说明、默认参数。"""
+    try:
+        specs = algorithms.list_specs()
+        errors = algorithms.load_errors()
+    except Exception as exc:                      # noqa: BLE001 —— 坏插件不该拖垮网页
+        return {"default": algorithms.DEFAULT_ID, "algorithms": [], "error": str(exc)}
+    return {"default": algorithms.DEFAULT_ID, "algorithms": specs, "errors": errors}
 
 
 def save_debug_config(cfg: dict | None, path: Path = CONFIG_PATH) -> None:
@@ -223,6 +238,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, HTML_PATH.read_bytes(), "text/html; charset=utf-8")
         elif u.path == "/api/traces":
             self._json(list_traces())
+        elif u.path == "/api/algorithms":
+            self._json(algo_payload())
         elif u.path == "/api/status":
             self._json({"running": STATE["running"], "error": STATE["error"]})
         elif u.path == "/api/gate":
@@ -254,7 +271,10 @@ class Handler(BaseHTTPRequestHandler):
                 seed = 0
             if seed <= 0:
                 seed = int(time.time()) % 100000
-            self._json({"name": start_run("mock", seed=seed), "seed": seed})
+            self._json({"name": start_run("mock", seed=seed,
+                                          algorithm=body.get("algorithm", ""),
+                                          params=body.get("params") or None),
+                        "seed": seed})
         elif u.path == "/api/run":
             mode = body.get("mode", "mock")
             if mode == "live" and not body.get("robot_id"):
@@ -264,7 +284,9 @@ class Handler(BaseHTTPRequestHandler):
             name = start_run(mode, seed=body.get("seed"),
                              robot_id=body.get("robot_id", ""),
                              url=body.get("url", "http://127.0.0.1:2026"),
-                             log_dir=STATE.get("log_dir", "logs"))
+                             log_dir=STATE.get("log_dir", "logs"),
+                             algorithm=body.get("algorithm", ""),
+                             params=body.get("params") or None)
             self._json({"name": name})
         elif u.path == "/api/gate/step":
             gate = STATE["gate"]
@@ -319,6 +341,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--trace-dir", default="traces")
     p.add_argument("--config", default="config.json",
                    help="调试配置（延迟/断点）来源，缺省读 config.json 的 debug 段")
+    p.add_argument("--algorithm", default="",
+                   help="算法 id（见 algorithms/README.md）；缺省用注册表默认算法")
+    p.add_argument("--params", default="", help='算法参数 JSON，例如 \'{"ring_r":1200}\'')
     p.add_argument("--port", type=int, default=8800)
     p.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     return p.parse_args()
@@ -329,6 +354,28 @@ def main() -> int:
     STATE["trace_dir"] = Path(args.trace_dir)
     STATE["log_dir"] = args.log_dir
     STATE["gate"] = StepGate(load_debug_config(args.config))
+    try:
+        cli_params = json.loads(args.params) if args.params else None
+    except ValueError as exc:
+        print(f"--params 不是合法 JSON：{exc}")
+        return 2
+    cli_algo = args.algorithm or algorithms.DEFAULT_ID
+    print("算法清单：")
+    try:
+        specs = algorithms.list_specs()
+    except Exception as exc:                      # noqa: BLE001
+        print(f"  [警告] 算法加载失败：{exc}")
+        specs = []
+    for spec in specs:
+        marks = []
+        if spec["id"] == algorithms.DEFAULT_ID:
+            marks.append("默认")
+        if spec["id"] == cli_algo:
+            marks.append("当前")
+        suffix = (" ← " + "、".join(marks)) if marks else ""
+        print(f"  {spec['id']:>16}  {spec['name']}（{spec['problem']}）{suffix}")
+    if specs and cli_algo not in {s["id"] for s in specs}:
+        print(f"  [警告] --algorithm {cli_algo} 不在清单里，运行时会报错。")
     dbg = STATE["gate"].snapshot()
     print("调试闸门：断点%s，延迟%s"
           % ("开" if dbg["breakpoint"]["enabled"] else "关",
@@ -340,7 +387,8 @@ def main() -> int:
             for i in range(args.cases):
                 seed = args.seed + i
                 print(f"[demo {i + 1}/{args.cases}] 生成 mock-seed{seed}.jsonl ...")
-                stats = run_blocking("mock", f"mock-seed{seed}.jsonl", seed=seed)
+                stats = run_blocking("mock", f"mock-seed{seed}.jsonl", seed=seed,
+                                     algorithm=cli_algo, params=cli_params)
                 if stats:
                     print(f"   清除 {stats['cleared']} 个，"
                           f"平均定位清除时间 {stats['平均定位清除时间']:.1f} s")
@@ -351,11 +399,12 @@ def main() -> int:
             print("--run 需要 --robot-id")
             return 2
         print("正在接模拟器跑一局（网页会在有数据后自动刷新）...")
-        start_run("live", robot_id=args.robot_id, url=args.url, log_dir=args.log_dir)
+        start_run("live", robot_id=args.robot_id, url=args.url, log_dir=args.log_dir,
+                  algorithm=cli_algo, params=cli_params)
 
     if not list_traces():
         print("trace 目录为空，自动生成一个离线案例 ...")
-        start_run("mock", seed=1)
+        start_run("mock", seed=1, algorithm=cli_algo, params=cli_params)
 
     try:
         server = Server(("127.0.0.1", args.port), Handler)

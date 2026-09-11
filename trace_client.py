@@ -221,9 +221,23 @@ _final_state = final_state          # 兼容旧名字
 def run_session(*, mode: str, out: str | Path, seed: int | None = None,
                 robot_id: str = "", url: str = "", log_dir: str | None = None,
                 n_sources: int | None = None,
-                directional_fraction: float = 0.0, gate=None) -> dict:
-    """跑一局（离线 mock 或真实模拟器），产出 trace 文件，返回统计字典。"""
-    from robot import InterferenceHunter
+                directional_fraction: float = 0.0, gate=None,
+                algorithm: str = "", params: dict | None = None) -> dict:
+    """跑一局（离线 mock 或真实模拟器），产出 trace 文件，返回统计字典。
+
+    `algorithm` / `params` 选算法与参数（见 algorithms/README.md）；缺省用注册表
+    里的默认算法。选了什么会写进 trace 的 meta，回放时一眼能看出来。
+    """
+    import algorithms
+
+    algorithm_id = algorithm or algorithms.DEFAULT_ID
+    spec = algorithms.get_spec(algorithm_id)
+    effective = {**spec.params, **(params or {})}
+    algo_meta = {"algorithm": spec.id, "algorithm_name": spec.name,
+                 "algorithm_problem": spec.problem, "algorithm_params": effective}
+
+    def build(client):
+        return algorithms.build_algorithm(algorithm_id, client, params)
 
     if mode == "mock":
         from mock_arena import MockArena
@@ -236,10 +250,11 @@ def run_session(*, mode: str, out: str | Path, seed: int | None = None,
             "sources": [{"ch": s.channel, "x": s.x, "y": s.y,
                          "radius": s.radius, "direction": s.direction}
                         for s in arena.sources],
+            **algo_meta,
         }
         rec = TraceRecorder(out, meta)
         client = TracingClient(arena, rec, gate)
-        hunter = InterferenceHunter(client, verbose=False)
+        hunter = build(client)
         try:
             stats = hunter.run()
         except AbortRequested as exc:
@@ -253,11 +268,12 @@ def run_session(*, mode: str, out: str | Path, seed: int | None = None,
 
     if mode == "live":
         from sim_client import SimulatorClient
-        rec = TraceRecorder(out, {"mode": "live", "robot_id": robot_id, "url": url})
+        rec = TraceRecorder(out, {"mode": "live", "robot_id": robot_id, "url": url,
+                                  **algo_meta})
         inner = SimulatorClient(robot_id, url, log_dir=log_dir, verbose=False)
         client = TracingClient(inner, rec, gate)
         try:
-            hunter = InterferenceHunter(client, verbose=False)
+            hunter = build(client)
             try:
                 stats = hunter.run()
             except AbortRequested as exc:
@@ -298,13 +314,18 @@ def main() -> int:
     p.add_argument("--robot-id", default="", help="live 模式必填")
     p.add_argument("--url", default="http://127.0.0.1:2026")
     p.add_argument("--log-dir", default="logs")
+    p.add_argument("--algorithm", default="", help="算法 id，缺省用注册表默认算法")
+    p.add_argument("--params", default="", help='算法参数 JSON，例如 \'{"ring_r":1200}\'')
     args = p.parse_args()
+
+    params = json.loads(args.params) if args.params else {}
 
     if args.mode == "mock" and args.cases > 1:
         for i in range(args.cases):
             seed = args.seed + i
             path = Path(args.out_dir) / f"mock-seed{seed}.jsonl"
-            stats = run_session(mode="mock", out=path, seed=seed)
+            stats = run_session(mode="mock", out=path, seed=seed,
+                                algorithm=args.algorithm, params=params)
             print(f"[{i + 1}/{args.cases}] {path}  清除 {stats['cleared']} 个  "
                   f"平均定位清除时间 {stats['平均定位清除时间']:.1f} s")
         return 0
@@ -312,7 +333,8 @@ def main() -> int:
     out = args.out or str(Path(args.out_dir) / (
         f"mock-seed{args.seed}.jsonl" if args.mode == "mock" else "live.jsonl"))
     stats = run_session(mode=args.mode, out=out, seed=args.seed,
-                        robot_id=args.robot_id, url=args.url, log_dir=args.log_dir)
+                        robot_id=args.robot_id, url=args.url, log_dir=args.log_dir,
+                        algorithm=args.algorithm, params=params)
     print(f"trace 已写入 {out}")
     for k, v in stats.items():
         print(f"  {k}: {v}")

@@ -654,6 +654,36 @@ class InterferenceHunter:
 
 
 # ================================================================== 离线自测
+def _algorithm_choice(args) -> tuple[str, dict]:
+    """解析 --algorithm / --params；缺省用注册表里的默认算法。"""
+    import json as _json
+
+    import algorithms
+
+    algorithm_id = (getattr(args, "algorithm", "") or "").strip() or algorithms.DEFAULT_ID
+    raw = (getattr(args, "params", "") or "").strip()
+    try:
+        params = _json.loads(raw) if raw else {}
+    except _json.JSONDecodeError as exc:
+        raise ValueError(f"--params 不是合法 JSON（{exc}）；例子：--params "
+                         '\'{"ring_r":1200}\'') from exc
+    if not isinstance(params, dict):
+        raise ValueError('--params 需要是 JSON 对象，例如 --params \'{"ring_r":1200}\'')
+    return algorithm_id, params
+
+
+def build_hunter(sim, args, verbose: bool = False):
+    """按 --algorithm / --params 构造策略对象。
+
+    算法本体登记在 algorithms/ 下（见 algorithms/README.md）：加一个新算法只要在
+    那个目录里加一个模块，不用改这里。缺省仍是"第三题初版算法"。
+    """
+    import algorithms
+
+    algorithm_id, params = _algorithm_choice(args)
+    return algorithms.build_algorithm(algorithm_id, sim, params, verbose=verbose)
+
+
 def run_dry_run(args) -> int:
     """用本地模拟环境自测策略，统计"清除比例"与"平均定位清除时间"。"""
     try:
@@ -662,12 +692,23 @@ def run_dry_run(args) -> int:
         print("缺少 mock_arena.py，无法离线自测。")
         return 2
 
-    verbose = not args.quiet
+    import algorithms
+
+    try:
+        algorithm_id, params = _algorithm_choice(args)
+        spec = algorithms.get_spec(algorithm_id)
+    except (KeyError, ValueError) as exc:
+        print(f"[错误] {exc}")
+        return 2
+    print(f"算法：{spec.name}（{spec.id} · {spec.problem}）"
+          f"    参数覆盖：{params if params else '（用默认值）'}")
+
     rows = []
     for case in range(args.cases):
         seed = args.seed + case
         arena = MockArena(seed=seed)
-        hunter = InterferenceHunter(arena, verbose=verbose)
+        hunter = algorithms.build_algorithm(algorithm_id, arena, params,
+                                            verbose=not args.quiet)
         stats = hunter.run()
         total = arena.n_sources
         rows.append((seed, total, stats["cleared"], stats["平均定位清除时间"],
@@ -705,6 +746,10 @@ def parse_args() -> argparse.Namespace:
                    help="可选：把本次行为轨迹写入该 JSONL（供 webui.py 可视化）")
     p.add_argument("--config", default="config.json",
                    help="调试配置来源（延迟/断点），缺省读 config.json 的 debug 段")
+    p.add_argument("--algorithm", default="",
+                   help="算法 id（见 algorithms/README.md），缺省用注册表的默认算法")
+    p.add_argument("--params", default="",
+                   help='算法参数 JSON，覆盖默认值，例如 --params \'{"ring_r":1200}\'')
     return p.parse_args()
 
 
@@ -726,7 +771,11 @@ def main() -> int:
                     print("[提示] 配置里断点是开着的：直接跑 robot.py 时没人点“下一步”，"
                           "每步会空等到超时才放行。要看单步请改用 "
                           "python webui.py --run --robot-id <参赛队号>")
-            hunter = InterferenceHunter(sim, verbose=not args.quiet)
+            try:
+                hunter = build_hunter(sim, args, verbose=not args.quiet)
+            except (KeyError, ValueError) as exc:
+                print(f"[错误] {exc}")
+                return 2
             stats = hunter.run()
             if tracer is not None:
                 import trace_client

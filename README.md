@@ -10,6 +10,7 @@
 | `probe_simulator.py` | 模拟器连通性探测脚本（只读，可选 `--enter`） |
 | `trace_client.py` | 行为轨迹记录壳：包装客户端记录每一步动作（**不改动 `robot.py`**） |
 | `step_gate.py` | 调试闸门：每步可加延迟、可停下来等网页点"下一步"（配置在 `config.json`） |
+| `algorithms/` | **算法注册表**：每个 `.py` 是一个可选算法（含"第三题初版算法"的登记与说明） |
 | `webui.py` | 可视化 Web 服务（读取 trace，提供页面与 JSON 接口） |
 | `webui.html` | 可视化页面：频道状态表、圆形地图、行动日志、汇总指标 |
 | `traces/` | 每次会话的行为轨迹 JSONL（可由 WebUI 直接可视化） |
@@ -41,12 +42,46 @@ python trace_client.py --mode mock --seed 1 --out traces/mock-seed1.jsonl
 
 # robot.py 自己也可以直接吐 trace（供 webui 事后回放）
 python robot.py --robot-id <参赛队号> --trace traces/live.jsonl
+
+# 指定算法与参数（见下一节；不写就用默认的"第三题初版算法"）
+python robot.py --robot-id demo --dry-run --cases 20 \
+       --algorithm p3-baseline --params '{"ring_r":1200}'
 ```
+
+## 算法注册表：选算法 / 加算法 / 改算法
+
+所有可选算法都登记在 `algorithms/` 下，**一个文件就是一个算法**。网页控制台的
+"算法"下拉框与命令行的 `--algorithm` 都直接读这个目录，所以：
+
+- **切换**：网页控制台顶部"算法"下拉选一个（下面会显示这套算法在做什么、可调什么），
+  命令行用 `--algorithm <id>`；参数框/`--params` 里的 JSON 覆盖该算法的默认参数。
+  每局 trace 的 meta 会记下算法 id、名字与生效参数，事后回放也知道是哪套算法跑的。
+- **新增**：复制 `algorithms/_template.py` 成 `algorithms/<你的名字>.py`（文件名别以 `_`
+  开头），改 `SPEC`（id / 名称 / 题目 / 说明 / 默认参数）并实现 `build(sim, params, *,
+  verbose=False)`，返回一个带 `run()` 的对象。**不用改网页、不用改注册表本身**，
+  刷新页面就能选到。
+- **只改参数**：`build()` 里 `import robot` 后覆盖模块级常量即可（`algorithms/p3_baseline.py`
+  就是这么做的）。
+- **改做法**：第三题那套的实现仍在 `robot.py` 的 `InterferenceHunter`，改那里；
+  对照表与注意事项见 `algorithms/README.md`。
+
+当前已登记：
+
+| id | 名称 | 题目 | 实现位置 |
+| --- | --- | --- | --- |
+| `p3-baseline` | 第三题初版算法 | 问题3 | `robot.py` 的 `InterferenceHunter` |
+
+写新算法只需守三条：动作全部走注入的 `sim`（录制/实时刷新/延迟/断点都挂在那一层）、
+严格串行、别在算法里 `time.sleep`（要放慢节奏用调试闸门）。
 
 ## 可视化 WebUI
 
 `webui.py` 默认监听 `http://127.0.0.1:8800/`，页面包含：
 
+- **算法选择**（调试控制台第一行）：下拉框列出 `algorithms/` 里登记的全部算法
+  （当前为"第三题初版算法"），下面一行显示它的做法说明与实现位置，右边是参数 JSON
+  框（改完直接点"生成新案例/实机运行"就按这套参数跑，"恢复默认参数"一键还原）；
+  页面顶部还会标出**当前这局 trace 是用哪套算法、什么参数跑的**。
 - **频道状态表**（右栏，最高优先）：20 个频道为列，每一次探测/清除为行，
   **最新一次动作始终刷新在第一行**并高亮；单元格显示该频道当时的状态
   （无信号 / 示向度读数 / 近距 / 已清除），当前正在测的那格也单独描边。
