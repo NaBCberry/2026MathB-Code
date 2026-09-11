@@ -81,29 +81,69 @@ def list_traces() -> list[dict]:
     return out
 
 
-def read_trace(name: str) -> dict:
+class TraceCache:
+    """按字节偏移增量解析 trace：每轮只读新增的那一段，支撑高频轮询。
+
+    轮询时前端带 ``since=<已有事件数>``，这里就只回增量事件，payload 通常为 0 字节。
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._st: dict[str, dict] = {}
+
+    def read(self, path: Path, since: int = 0) -> dict:
+        key = str(path)
+        with self._lock:
+            st = self._st.get(key)
+            try:
+                size = path.stat().st_size
+            except OSError:
+                raise FileNotFoundError(path.name)
+            if st is None:
+                st = {"offset": 0, "buf": "", "size": -1,
+                      "events": [], "meta": {}, "summary": {}}
+                self._st[key] = st
+            elif size < st["size"]:                  # 同名文件被新的一局覆盖
+                st.update(offset=0, buf="", size=-1, events=[], meta={}, summary={})
+            if size != st["size"]:
+                with path.open("r", encoding="utf-8", errors="replace", newline="") as fh:
+                    fh.seek(st["offset"])
+                    chunk = fh.read()
+                    st["offset"] = fh.tell()
+                lines = (st["buf"] + chunk).split("\n")
+                st["buf"] = lines.pop()          # 末段可能只写了一半，留到下次
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except ValueError:
+                        continue
+                    kind = obj.get("kind")
+                    if kind == "meta":
+                        st["meta"] = obj
+                    elif kind == "summary":
+                        st["summary"] = obj
+                    else:
+                        st["events"].append(obj)
+                st["size"] = size
+            events = st["events"]
+            return {"meta": st["meta"], "summary": st["summary"],
+                    "events": events[since:], "total": len(events)}
+
+
+TRACES = TraceCache()
+
+
+def read_trace(name: str, since: int = 0) -> dict:
+    """读一局 trace；since>0 时只返回第 since 条之后的新事件（增量）。"""
     path = (STATE["trace_dir"] / name).resolve()
     if path.parent != STATE["trace_dir"].resolve() or not path.exists():
         raise FileNotFoundError(name)
-    meta, events, summary = {}, [], {}
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except ValueError:
-                continue                      # 正在写入时可能出现半行
-            kind = obj.get("kind")
-            if kind == "meta":
-                meta = obj
-            elif kind == "summary":
-                summary = obj
-            else:
-                events.append(obj)
-    return {"meta": meta, "events": events, "summary": summary,
-            "name": name, "running": STATE["running"]}
+    out = TRACES.read(path, since)
+    out.update({"name": name, "running": STATE["running"]})
+    return out
 
 
 def run_blocking(mode: str, name: str, *, seed: int | None = None, robot_id: str = "",
@@ -192,7 +232,11 @@ class Handler(BaseHTTPRequestHandler):
         elif u.path == "/api/trace":
             name = (q.get("name") or [""])[0]
             try:
-                self._json(read_trace(name))
+                since = int((q.get("since") or ["0"])[0])
+            except ValueError:
+                since = 0
+            try:
+                self._json(read_trace(name, max(since, 0)))
             except FileNotFoundError:
                 self._send(404, b"not found", "text/plain; charset=utf-8")
         else:

@@ -223,7 +223,8 @@ async function loadList(){
 
 async function loadTrace(name){
   if(!name) return;
-  DATA = await api("/api/trace?name=" + encodeURIComponent(name));
+  const r = await api("/api/trace?name=" + encodeURIComponent(name));
+  DATA = {meta:r.meta||{}, summary:r.summary||{}, events:r.events||[], name:r.name};
   MODEL = buildModel(DATA);
   view.init = false;
   render();
@@ -240,11 +241,17 @@ function snapshot(st){
   });
 }
 
-function buildModel(data){
+function newModel(){
   const st = {}; CHS.forEach(c=> st[c] = {code:0, last_svd:null, cleared:false,
                                           n_dir:0, n_no:0, near:false});
-  const rows = [];
-  for(const e of data.events){
+  return {rows:[], st, meta:{}, summary:{}, name:""};
+}
+
+/* 只处理新增事件：把新行追加到 MODEL.rows，并顺带推进频道状态 */
+function appendEvents(model, events){
+  const st = model.st;
+  let added = 0;
+  for(const e of events){
     if(e.kind!=="enter" && e.kind!=="measure" && e.kind!=="clear") continue;  // 闸门等事件不上表
     if(e.kind==="measure"){
       const s = st[e.ch];
@@ -254,9 +261,17 @@ function buildModel(data){
     } else if(e.kind==="clear"){
       if(e.result==="success") st[e.ch].cleared = true;
     }
-    rows.push(Object.assign({cells:snapshot(st)}, e));
+    model.rows.push(Object.assign({cells:snapshot(st)}, e));
+    added++;
   }
-  return {rows, st, meta:data.meta||{}, summary:data.summary||{}, name:data.name};
+  return added;
+}
+
+function buildModel(data){
+  const m = newModel();
+  m.meta = data.meta||{}; m.summary = data.summary||{}; m.name = data.name||"";
+  appendEvents(m, data.events||[]);
+  return m;
 }
 
 /* ---------------------------------------------------------------- 汇总 */
@@ -427,55 +442,71 @@ function renderMap(){
 }
 
 /* ---------------------------------------------------------------- 状态表 */
-function renderTable(){
+function rowHtml(e, isNewest){
+  let kind, res, svd="";
+  if(e.kind==="enter"){ kind=`<span class="tag t-enter">/enter</span>`; res="开始"; }
+  else if(e.kind==="measure"){
+    kind="检测";
+    res = e.result==="direction" ? `<span class="tag t-dir">有信号</span>`
+        : e.result==="near" ? `<span class="tag t-near">距离过近</span>`
+        : `<span class="tag t-no">无信号</span>`;
+    svd = (e.svd==null)? "" : e.svd.toFixed(2)+"°";
+  }else{
+    kind="清除";
+    res = e.result==="success" ? `<span class="tag t-ok">已清除</span>`
+        : `<span class="tag t-miss">未发现</span>`;
+  }
+  const tip = e.move_m!=null
+    ? `移动 ${e.move_m.toFixed(1)} m / ${e.move_s.toFixed(1)} s；换频 ${(e.switch_s||0).toFixed(0)} s；`
+      +`动作 ${(e.action_s||0).toFixed(0)} s`
+    : "";
+  const cells = CHS.map((c,i)=>{
+    const cell = e.cells ? e.cells[i] : {code:0,text:""};
+    const now = (e.kind==="measure" && e.ch===c) || (e.kind==="clear" && e.ch===c);
+    return `<td class="ch s${cell.code}${now?" now":""}">${cell.text}</td>`;
+  }).join("");
+  return `<tr class="mrow${isNewest?" newest":""}" title="${tip}">
+    <td class="c">${e.kind==="enter" ? 0 : e.seq}</td>
+    <td>${(e.t||0).toFixed(1)}</td>
+    <td class="c">${kind}</td>
+    <td>(${(e.x||0).toFixed(0)}, ${(e.y||0).toFixed(0)})</td>
+    <td class="c">${e.ch??""}</td>
+    <td class="c">${res}</td>
+    <td>${svd}</td>${cells}</tr>`;
+}
+
+function keptRows(){
   const only = $("onlysig").checked;
-  const rows = MODEL.rows.filter(e=>{
+  return MODEL.rows.filter(e=>{
     if(!only) return true;
     if(e.kind==="clear" && e.result==="success") return true;
     return e.kind==="measure" && (e.result==="direction" || e.result==="near");
-  }).reverse();                                     // 最新一次动作排在第一行
+  });
+}
+
+function renderTableFull(){
+  const rows = keptRows().reverse();                 // 最新一次动作排在第一行
   const head = `<tr>
     <th>#</th><th>虚拟时刻(s)</th><th>动作</th><th>位置</th><th>频道</th><th>结果</th><th>示向度</th>`
     + CHS.map(c=>`<th class="chan c">${c}</th>`).join("") + `</tr>`;
   $("tbl").tHead.innerHTML = head;
-
-  const body = rows.map((e,rowIdx)=>{
-    let kind, res, svd="";
-    if(e.kind==="enter"){ kind=`<span class="tag t-enter">/enter</span>`; res="开始"; }
-    else if(e.kind==="measure"){
-      kind="检测";
-      res = e.result==="direction" ? `<span class="tag t-dir">有信号</span>`
-          : e.result==="near" ? `<span class="tag t-near">距离过近</span>`
-          : `<span class="tag t-no">无信号</span>`;
-      svd = (e.svd==null)? "" : e.svd.toFixed(2)+"°";
-    }else{
-      kind="清除";
-      res = e.result==="success" ? `<span class="tag t-ok">已清除</span>`
-          : `<span class="tag t-miss">未发现</span>`;
-    }
-    const tip = e.move_m!=null
-      ? `移动 ${e.move_m.toFixed(1)} m / ${e.move_s.toFixed(1)} s；换频 ${(e.switch_s||0).toFixed(0)} s；`
-        +`动作 ${(e.action_s||0).toFixed(0)} s`
-      : "";
-    const cells = CHS.map((c,i)=>{
-      const cell = e.cells ? e.cells[i] : {code:0,text:""};
-      const now = (e.kind==="measure" && e.ch===c) || (e.kind==="clear" && e.ch===c);
-      return `<td class="ch s${cell.code}${now?" now":""}">${cell.text}</td>`;
-    }).join("");
-    return `<tr class="mrow${rowIdx===0?" newest":""}" title="${tip}">
-      <td class="c">${e.kind==="enter" ? 0 : e.seq}</td>
-      <td>${(e.t||0).toFixed(1)}</td>
-      <td class="c">${kind}</td>
-      <td>(${(e.x||0).toFixed(0)}, ${(e.y||0).toFixed(0)})</td>
-      <td class="c">${e.ch??""}</td>
-      <td class="c">${res}</td>
-      <td>${svd}</td>${cells}</tr>`;
-  }).join("");
-  $("tbl").tBodies[0].innerHTML = body;
+  $("tbl").tBodies[0].innerHTML = rows.map((e,i)=>rowHtml(e, i===0)).join("");
   $("rowcount").textContent = `${rows.length} 行 × 20 频道`;
 }
 
-function render(){ renderCards(); renderMap(); renderTable(); }
+/* 增量：只把新增的行插到最前面，不重画已有行 */
+function prependRows(newRows){
+  if(!newRows.length) return;
+  if($("onlysig").checked){ renderTableFull(); return; }
+  const tb = $("tbl").tBodies[0];
+  const oldFirst = tb.rows[0];
+  tb.insertAdjacentHTML("afterbegin",
+    newRows.slice().reverse().map((e,i)=>rowHtml(e, i===0)).join(""));
+  if(oldFirst) oldFirst.classList.remove("newest");   // 只有第一行保持高亮
+  $("rowcount").textContent = `${tb.rows.length} 行 × 20 频道`;
+}
+
+function render(){ renderCards(); renderMap(); renderTableFull(); }
 
 /* ---------------------------------------------------------------- 调试控制台 */
 let gateCfg = null;
@@ -617,17 +648,49 @@ function bind(){
   cv.addEventListener("dblclick", ()=>{ view.init=false; renderMap(); });
   window.addEventListener("resize", ()=>{ view.init=false; renderMap(); });
 
-  setInterval(async ()=>{                       // 自动刷新：仅在文件变化时重绘
-    gateTick();
-    if(!$("live").checked || !CUR) return;
-    try{
-      const r = await fetch("/api/trace?name="+encodeURIComponent(CUR), {cache:"no-store"});
-      const d = await r.json();
-      if(d.events && d.events.length !== (DATA.events||[]).length){ DATA = d; MODEL = buildModel(d); render(); }
-      const st = await api("/api/status");
-      $("status").textContent = st.running ? "正在运行…" : (st.error ? "错误："+st.error : "");
-    }catch(_){}
-  }, 1500);
+  pollTimer = setTimeout(tick, 300);            // 启动自适应轮询
+}
+
+/* ------------------------------------------------ 自适应增量轮询
+   运行中/等待放行时 250ms 一轮，空闲 1.2s 一轮；每轮只取"新增的那几条"，
+   页面只把新行插到表头，不整表重画。 */
+let pollTimer = null, pollDelay = 400;
+
+function applyDelta(t){
+  if(t.total != null && t.total < (DATA.events||[]).length){ loadTrace(CUR); return; }
+  const fresh = t.events || [];
+  const metaChanged = JSON.stringify(t.meta||{}) !== JSON.stringify(DATA.meta||{});
+  const sumChanged  = JSON.stringify(t.summary||{}) !== JSON.stringify(DATA.summary||{});
+  if(!fresh.length && !metaChanged && !sumChanged) return;
+  if(t.meta) DATA.meta = t.meta;
+  if(t.summary) DATA.summary = t.summary;
+  const added = appendEvents(MODEL, fresh);
+  if(fresh.length) DATA.events = DATA.events.concat(fresh);
+  MODEL.meta = DATA.meta; MODEL.summary = DATA.summary;
+  renderCards();
+  renderMap();
+  if(added) prependRows(MODEL.rows.slice(-added));
+  else if(metaChanged || sumChanged) renderTableFull();
+}
+
+async function tick(){
+  let busy = false;
+  try{
+    const jobs = [api("/api/gate").catch(()=>null)];
+    const want = CUR && $("live").checked;
+    jobs.push(want
+      ? api(`/api/trace?name=${encodeURIComponent(CUR)}&since=${(DATA.events||[]).length}`)
+          .catch(()=>null)
+      : Promise.resolve(null));
+    const [g, t] = await Promise.all(jobs);
+    if(g){
+      renderGate(g);
+      busy = !!(g.running || (g.gate && g.gate.pending));
+      $("status").textContent = g.error ? ("错误：" + g.error) : (g.running ? "正在运行…" : "");
+    }
+    if(t) applyDelta(t);
+  }catch(_){}
+  pollTimer = setTimeout(tick, busy ? 250 : 1200);
 }
 
 (async function init(){
