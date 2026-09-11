@@ -9,6 +9,7 @@
 | `mock_arena.py` | **本地离线模拟器**，按题目规则复刻电磁环境，用于无网络自测与调参 |
 | `probe_simulator.py` | 模拟器连通性探测脚本（只读，可选 `--enter`） |
 | `trace_client.py` | 行为轨迹记录壳：包装客户端记录每一步动作（**不改动 `robot.py`**） |
+| `step_gate.py` | 调试闸门：每步可加延迟、可停下来等网页点"下一步"（配置在 `config.json`） |
 | `webui.py` | 可视化 Web 服务（读取 trace，提供页面与 JSON 接口） |
 | `webui.html` | 可视化页面：频道状态表、圆形地图、行动日志、汇总指标 |
 | `traces/` | 每次会话的行为轨迹 JSONL（可由 WebUI 直接可视化） |
@@ -37,6 +38,9 @@ python webui.py --run --robot-id <参赛队号>
 
 # 单独产出 trace（不启网页）
 python trace_client.py --mode mock --seed 1 --out traces/mock-seed1.jsonl
+
+# robot.py 自己也可以直接吐 trace（供 webui 事后回放）
+python robot.py --robot-id <参赛队号> --trace traces/live.jsonl
 ```
 
 ## 可视化 WebUI
@@ -53,6 +57,32 @@ python trace_client.py --mode mock --seed 1 --out traces/mock-seed1.jsonl
   （移动/换频/检测/清除占比）、各频道终态。
 
 地图与表格都来自 `traces/*.jsonl`，所以**正式测试跑完后也能回头看**。
+
+## 调试：每步延迟 / 断点单步
+
+配置在 `config.json` 的 `debug` 段（页面上的调试控制台也能改，点"写入 config.json"落盘）：
+
+```json
+"debug": {
+  "enabled": true,
+  "delay":      { "enabled": false, "before_s": 0.3, "after_s": 0.0,
+                  "actions": ["enter", "measure", "clear"] },
+  "breakpoint": { "enabled": false, "actions": ["measure", "clear"],
+                  "channels": [], "every_n": 1, "timeout_s": 600, "reserve_s": 90 }
+}
+```
+
+- **每步延迟**：命中的动作在**发出前**睡 `before_s` 秒、**收到响应后**睡 `after_s` 秒（现实时间），
+  用来把节奏放慢、肉眼看清模拟器里机器狗怎么走。
+- **断点单步**：命中的动作在发出前停住，网页上出现"等待放行"，点「下一步 ▶」才继续。
+  `actions` 选哪些指令停、`channels` 可只盯某几个频道、`every_n` 每 n 次停一次。
+- 两道安全阀：单步最多等 `timeout_s` 秒；`/enter` 时按本局剩余现实时间留出 `reserve_s` 秒余量，
+  到点**强制放行并永久关闭断点**，避免忘记点"下一步"把正式测试机会烧掉。
+- 中止：网页上的「中止运行」会让闸门抛异常、结束本局（`robot.py` 会打印"已在网页上请求中止"）。
+
+要单步调试就用网页起跑（`webui.py --run`），或者先在网页"实机运行"里填队号点开始；
+直接跑 `python robot.py --trace ...` 时没人点"下一步"，每步会空等到超时才放行，`robot.py`
+检测到这种组合会打印提醒。
 
 ## 问题3 策略要点
 

@@ -701,6 +701,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--cases", type=int, default=10, help="离线自测的案例数")
     p.add_argument("--seed", type=int, default=1, help="离线自测的随机种子起点")
     p.add_argument("--quiet", action="store_true", help="不逐条打印请求/响应")
+    p.add_argument("--trace", default="",
+                   help="可选：把本次行为轨迹写入该 JSONL（供 webui.py 可视化）")
+    p.add_argument("--config", default="config.json",
+                   help="调试配置来源（延迟/断点），缺省读 config.json 的 debug 段")
     return p.parse_args()
 
 
@@ -711,14 +715,33 @@ def main() -> int:
     try:
         with SimulatorClient(args.robot_id, args.url,
                              log_dir=(args.log_dir or None),
-                             verbose=not args.quiet) as sim:
-            stats = InterferenceHunter(sim, verbose=not args.quiet).run()
-    except (OSError, RuntimeError) as exc:
-        # 倒计时未结束 / 测试已结束 / 未开始，接口会直接关闭；这类失败不消耗测试次数
-        print(f"[失败] 与模拟器通信中断：{exc}")
-        print("       请确认：模拟器已登录、已点开始测试、界面提示机器狗接口已就绪，")
-        print("       且 robot_id 与模拟器当前登录的参赛队号逐字节一致。")
-        return 1
+                             verbose=not args.quiet) as raw:
+            sim = raw
+            tracer = None
+            if args.trace:
+                import trace_client
+                tracer = trace_client.attach(raw, args.trace, args.config)
+                sim = tracer
+                if tracer._gate.snapshot()["breakpoint"]["enabled"]:
+                    print("[提示] 配置里断点是开着的：直接跑 robot.py 时没人点“下一步”，"
+                          "每步会空等到超时才放行。要看单步请改用 "
+                          "python webui.py --run --robot-id <参赛队号>")
+            hunter = InterferenceHunter(sim, verbose=not args.quiet)
+            stats = hunter.run()
+            if tracer is not None:
+                import trace_client
+                tracer.finish(stats, trace_client.final_state(hunter))
+    except Exception as exc:
+        if type(exc).__name__ == "AbortRequested":
+            print("[中止] 已在网页上请求中止本次运行（本次测试到此结束）。")
+            return 130
+        if isinstance(exc, (OSError, RuntimeError)):
+            # 倒计时未结束 / 测试已结束 / 未开始，接口会直接关闭；这类失败不消耗测试次数
+            print(f"[失败] 与模拟器通信中断：{exc}")
+            print("       请确认：模拟器已登录、已点开始测试、界面提示机器狗接口已就绪，")
+            print("       且 robot_id 与模拟器当前登录的参赛队号逐字节一致。")
+            return 1
+        raise
     print("=" * 72)
     for k, v in stats.items():
         print(f"{k:>14}: {v}")

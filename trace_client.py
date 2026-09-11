@@ -22,6 +22,8 @@ import math
 import time
 from pathlib import Path
 
+from step_gate import AbortRequested
+
 SPEED = 5.0
 MEASURE_S = 5.0
 SWITCH_S = 1.0
@@ -120,31 +122,72 @@ class TraceRecorder:
         self._closed = True
         self._f.close()
 
+    def note(self, obj: dict) -> None:
+        """记录一条非动作事件（例如闸门的停/放行），不参与状态表渲染。"""
+        self._write(dict(obj, kind=obj.get("kind", "gate")))
+
 
 class TracingClient:
-    """与 SimulatorClient 同形的包装客户端：转发给内层客户端并记录轨迹。"""
+    """与 SimulatorClient 同形的包装客户端：转发给内层客户端并记录轨迹。
 
-    def __init__(self, inner, recorder: TraceRecorder) -> None:
+    同时（可选）挂一道 StepGate：在每个动作之前/之后决定是否延迟或停下等人。
+    """
+
+    def __init__(self, inner, recorder: TraceRecorder, gate=None) -> None:
         self._inner = inner
         self._rec = recorder
+        self._gate = gate
 
     def enter(self) -> dict:
+        if self._gate is not None:
+            self._gate.reset_run()          # 新一局：清空计数与中止标志
+            self._gate.before("enter", {})
         resp = self._inner.enter()
         self._rec.enter(resp)
+        if self._gate is not None:
+            self._gate.set_budget(resp.get("remaining_real_duration_s"))
+            self._drain_gate()
+            self._gate.after("enter", {})
+            self._drain_gate()
         return resp
 
     def measure(self, x: float, y: float, ch: int) -> dict:
+        info = {"x": x, "y": y, "channel": ch}
+        if self._gate is not None:
+            self._gate.before("measure", info)
         resp = self._inner.measure(x, y, ch)
         self._rec.measure(x, y, ch, resp)
+        if self._gate is not None:
+            self._drain_gate()
+            self._gate.after("measure", info)
+            self._drain_gate()
         return resp
 
     def clear(self, x: float, y: float, ch: int) -> dict:
+        info = {"x": x, "y": y, "channel": ch}
+        if self._gate is not None:
+            self._gate.before("clear", info)
         resp = self._inner.clear(x, y, ch)
         self._rec.clear(x, y, ch, resp)
+        if self._gate is not None:
+            self._drain_gate()
+            self._gate.after("clear", info)
+            self._drain_gate()
         return resp
 
     def exit(self) -> dict:
         return self._inner.exit()
+
+    def finish(self, stats: dict | None = None, final_state: dict | None = None) -> None:
+        """结束记录（robot.py 用 --trace 时由外部调用）。"""
+        self._drain_gate()
+        self._rec.finish(stats, final_state)
+
+    def _drain_gate(self) -> None:
+        if self._gate is None:
+            return
+        for note in self._gate.take_notes():
+            self._rec.note(note)
 
     def __enter__(self) -> "TracingClient":
         return self
@@ -156,7 +199,7 @@ class TracingClient:
             pass
 
 
-def _final_state(hunter) -> dict:
+def final_state(hunter) -> dict:
     """只读地取一份策略内部状态，供可视化显示各频道的定位结果（不修改 robot.py）。"""
     out = {}
     for ch, st in hunter.state.items():
@@ -172,10 +215,13 @@ def _final_state(hunter) -> dict:
     return out
 
 
+_final_state = final_state          # 兼容旧名字
+
+
 def run_session(*, mode: str, out: str | Path, seed: int | None = None,
                 robot_id: str = "", url: str = "", log_dir: str | None = None,
                 n_sources: int | None = None,
-                directional_fraction: float = 0.0) -> dict:
+                directional_fraction: float = 0.0, gate=None) -> dict:
     """跑一局（离线 mock 或真实模拟器），产出 trace 文件，返回统计字典。"""
     from robot import InterferenceHunter
 
@@ -192,9 +238,16 @@ def run_session(*, mode: str, out: str | Path, seed: int | None = None,
                         for s in arena.sources],
         }
         rec = TraceRecorder(out, meta)
-        client = TracingClient(arena, rec)
+        client = TracingClient(arena, rec, gate)
         hunter = InterferenceHunter(client, verbose=False)
-        stats = hunter.run()
+        try:
+            stats = hunter.run()
+        except AbortRequested as exc:
+            client._drain_gate()
+            rec.note({"kind": "gate", "action": "abort", "reason": "abort",
+                      "message": str(exc)})
+            raise
+        client._drain_gate()
         rec.finish(stats, _final_state(hunter))
         return stats
 
@@ -202,16 +255,37 @@ def run_session(*, mode: str, out: str | Path, seed: int | None = None,
         from sim_client import SimulatorClient
         rec = TraceRecorder(out, {"mode": "live", "robot_id": robot_id, "url": url})
         inner = SimulatorClient(robot_id, url, log_dir=log_dir, verbose=False)
-        client = TracingClient(inner, rec)
+        client = TracingClient(inner, rec, gate)
         try:
             hunter = InterferenceHunter(client, verbose=False)
-            stats = hunter.run()
+            try:
+                stats = hunter.run()
+            except AbortRequested as exc:
+                client._drain_gate()
+                rec.note({"kind": "gate", "action": "abort", "reason": "abort",
+                          "message": str(exc)})
+                raise
+            client._drain_gate()
             rec.finish(stats, _final_state(hunter))
         finally:
             inner.close()
         return stats
 
     raise ValueError(f"未知 mode: {mode}")
+
+
+def attach(inner, trace_path: str | Path, config_path: str | Path = "config.json",
+           meta: dict | None = None, gate=None):
+    """给任意客户端套上记录壳（robot.py 的 --trace 用）。
+
+    返回 TracingClient；跑完后请调用它的 ``finish(stats, final_state)``。
+    """
+    from step_gate import StepGate, load_debug_config
+
+    if gate is None:
+        gate = StepGate(load_debug_config(config_path))
+    rec = TraceRecorder(trace_path, meta or {"mode": "live"})
+    return TracingClient(inner, rec, gate)
 
 
 def main() -> int:

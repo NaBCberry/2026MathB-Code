@@ -9,5 +9,25 @@
   "clear_radius_m": 20,
   "arena_radius_m": 1800,
   "http_timeout_s": 5,
-  "log_dir": "logs"
+  "log_dir": "logs",
+
+  "debug": {
+    "enabled": true,
+
+    "delay": {
+      "enabled": false,
+      "before_s": 0.3,
+      "after_s": 0.0,
+      "actions": ["enter", "measure", "clear"]
+    },
+
+    "breakpoint": {
+      "enabled": false,
+      "actions": ["measure", "clear"],
+      "channels": [],
+      "every_n": 1,
+      "timeout_s": 600,
+      "reserve_s": 90
+    }
+  }
 }

@@ -79,6 +79,20 @@
   .chip.absent{background:#f1f5f9;color:#64748b}
   .chip.miss{background:#fee2e2;border-color:#fca5a5;color:#b91c1c}
   label.ck{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--ink2)}
+  .dbg .dbgrow{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:10px}
+  .dbg .dbgrow label{font-size:12px;color:var(--ink2);display:inline-flex;align-items:center;gap:5px}
+  .dbg .sep{width:1px;height:18px;background:var(--line2)}
+  .dbg input[type=number]{padding:3px 6px;border:1px solid var(--line2);border-radius:6px}
+  .nowbox{border:1px dashed var(--line2);border-radius:8px;padding:8px 10px;font-size:13px;
+          color:var(--ink2);background:#fafbfc}
+  .nowbox.waiting{border-color:#f59e0b;background:#fffbeb;color:#92400e}
+  .badge{padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700}
+  .b-idle{background:#f1f5f9;color:#64748b}
+  .b-run{background:#dbeafe;color:#1d4ed8}
+  .b-wait{background:#fef3c7;color:#b45309;animation:pulse 1.2s infinite}
+  .b-err{background:#fee2e2;color:#b91c1c}
+  .glog{font-size:11px;color:var(--ink2);max-height:74px;overflow:auto;margin-top:8px;
+        font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -94,6 +108,40 @@
 </header>
 
 <main>
+  <div class="panel">
+    <h2>调试控制台
+      <span id="dbgState" class="badge b-idle">空闲</span>
+      <span class="grow"></span>
+      <span id="dbgBudget" class="muted"></span>
+    </h2>
+    <div class="body dbg">
+      <div class="dbgrow">
+        <label class="ck"><input type="checkbox" id="dbgDelay"> 每步延迟</label>
+        <label>前 <input type="number" id="dbgBefore" step="0.1" min="0" style="width:62px"> s</label>
+        <label>后 <input type="number" id="dbgAfter" step="0.1" min="0" style="width:62px"> s</label>
+        <span class="sep"></span>
+        <label class="ck"><input type="checkbox" id="dbgBreak"> 断点单步</label>
+        <label class="ck"><input type="checkbox" class="bpAct" value="enter"> /enter</label>
+        <label class="ck"><input type="checkbox" class="bpAct" value="measure"> /measure</label>
+        <label class="ck"><input type="checkbox" class="bpAct" value="clear"> /clear</label>
+        <label>每 <input type="number" id="dbgEvery" min="1" step="1" style="width:54px"> 次停一次</label>
+        <label>单步上限 <input type="number" id="dbgTimeout" min="5" step="5" style="width:66px"> s</label>
+        <button id="dbgSave">写入 config.json</button>
+      </div>
+      <div class="dbgrow">
+        <button class="primary" id="dbgNext">下一步 ▶</button>
+        <button id="dbgResume">继续运行（关断点）</button>
+        <button id="dbgAbort">中止运行</button>
+        <span class="sep"></span>
+        <label>队号 <input id="runId" placeholder="参赛队号" style="width:150px"></label>
+        <button id="runLive">实机运行</button>
+        <button id="runMock">离线案例</button>
+      </div>
+      <div id="dbgNow" class="nowbox">当前没有等待中的动作。</div>
+      <div class="glog" id="dbgLog"></div>
+    </div>
+  </div>
+
   <div class="cards" id="cards"></div>
 
   <div class="row">
@@ -187,6 +235,7 @@ function buildModel(data){
                                           n_dir:0, n_no:0, near:false});
   const rows = [];
   for(const e of data.events){
+    if(e.kind!=="enter" && e.kind!=="measure" && e.kind!=="clear") continue;  // 闸门等事件不上表
     if(e.kind==="measure"){
       const s = st[e.ch];
       if(e.result==="direction"){ s.code=2; s.last_svd=e.svd; s.n_dir++; }
@@ -418,6 +467,79 @@ function renderTable(){
 
 function render(){ renderCards(); renderMap(); renderTable(); }
 
+/* ---------------------------------------------------------------- 调试控制台 */
+let gateCfg = null;
+
+function collectDebug(){
+  const acts = Array.from(document.querySelectorAll(".bpAct:checked")).map(e=>e.value);
+  return {
+    delay:{ enabled:$("dbgDelay").checked,
+            before_s:Number($("dbgBefore").value)||0,
+            after_s:Number($("dbgAfter").value)||0 },
+    breakpoint:{ enabled:$("dbgBreak").checked, actions:acts,
+                 every_n:Math.max(1, Number($("dbgEvery").value)||1),
+                 timeout_s:Math.max(5, Number($("dbgTimeout").value)||600) }
+  };
+}
+function fillDebug(c){
+  if(!c) return;
+  gateCfg = c;
+  const focus = document.activeElement;
+  const set = (id,val)=>{ const el=$(id); if(el && el!==focus) el.value = val; };
+  const chk = (id,val)=>{ const el=$(id); if(el && el!==focus) el.checked = !!val; };
+  chk("dbgDelay", c.delay && c.delay.enabled);
+  set("dbgBefore", c.delay ? c.delay.before_s : 0);
+  set("dbgAfter",  c.delay ? c.delay.after_s  : 0);
+  chk("dbgBreak", c.breakpoint && c.breakpoint.enabled);
+  const acts = (c.breakpoint && c.breakpoint.actions) || [];
+  document.querySelectorAll(".bpAct").forEach(el=>{ if(el!==focus) el.checked = acts.includes(el.value); });
+  set("dbgEvery",   c.breakpoint ? c.breakpoint.every_n : 1);
+  set("dbgTimeout", c.breakpoint ? c.breakpoint.timeout_s : 600);
+}
+async function pushDebug(save){
+  const cfg = collectDebug();
+  const r = await api("/api/gate/update", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({debug:cfg, save:!!save})});
+  fillDebug((r.config && r.config.delay) ? r.config : cfg);
+}
+
+function renderGate(g){
+  const G = g.gate;
+  const st = $("dbgState");
+  if(g.error){ st.textContent = "出错了"; st.className = "badge b-err"; }
+  else if(G && G.pending){ st.textContent = "等待下一步"; st.className = "badge b-wait"; }
+  else if(g.running){ st.textContent = "运行中 · " + g.running; st.className = "badge b-run"; }
+  else { st.textContent = "空闲"; st.className = "badge b-idle"; }
+  if(G){
+    if(!gateCfg) fillDebug(G.config);
+    $("dbgBudget").textContent = (G.budget_left_s!=null)
+        ? `现实时间余量 ${G.budget_left_s.toFixed(0)} s 内强制放行断点` : "";
+    if(G.pending){
+      const p = G.pending, i = p.info || {};
+      const wait = (Date.now()/1000) - p.since;
+      const left = Math.max((p.auto_release_at||0) - Date.now()/1000, 0);
+      const where = (p.kind==="measure"||p.kind==="clear")
+          ? `频道 ${i.channel} @ (${Math.round(i.x)}, ${Math.round(i.y)})` : "";
+      $("dbgNow").className = "nowbox waiting";
+      $("dbgNow").innerHTML = `<b>等待放行</b>：第 ${p.seq} 步 ${p.kind} ${where}`
+          + ` · 已等待 ${wait.toFixed(1)} s · <b>${left.toFixed(0)} s 后自动放行</b>`
+          + (p.hint ? ` · ${p.hint}` : "");
+    }else{
+      $("dbgNow").className = "nowbox";
+      const last = G.last;
+      $("dbgNow").innerHTML = last
+        ? `已放行：${last.action}（${last.reason}，等待 ${last.waited_s} s）· 累计动作 ${G.count} 步`
+        : `当前没有等待中的动作 · 累计动作 ${G.count} 步`;
+    }
+    $("dbgLog").innerHTML = (G.log||[]).slice().reverse().slice(0,20).map(n=>
+      `<div>${n.at}  ${n.action}  ${n.reason}  ${n.waited_s}s</div>`).join("");
+  }
+}
+async function gateTick(){
+  try{ renderGate(await api("/api/gate")); }catch(_){}
+}
+
 /* ---------------------------------------------------------------- 交互 */
 function bind(){
   $("sel").onchange = e => { CUR = e.target.value; loadTrace(CUR); };
@@ -434,6 +556,28 @@ function bind(){
       }
     }, 500);
   };
+  $("dbgNext").onclick = async ()=>{ await api("/api/gate/step", {method:"POST"}); gateTick(); };
+  $("dbgResume").onclick = async ()=>{
+    $("dbgBreak").checked = false; await pushDebug(false); gateTick();
+  };
+  $("dbgAbort").onclick = async ()=>{ await api("/api/gate/abort", {method:"POST"}); gateTick(); };
+  $("dbgSave").onclick = async ()=>{ await pushDebug(true); alert("已写入 config.json"); };
+  $("runLive").onclick = async ()=>{
+    const rid = $("runId").value.trim();
+    if(!rid){ alert("请先填参赛队号"); return; }
+    const r = await api("/api/run", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({mode:"live", robot_id:rid})});
+    CUR = r.name; await loadList(); $("sel").value = CUR; gateTick();
+  };
+  $("runMock").onclick = async ()=>{
+    const r = await api("/api/new?seed="+Math.floor(Math.random()*90000+1), {method:"POST"});
+    CUR = r.name;
+    setTimeout(async ()=>{ await loadList(); $("sel").value = CUR; await loadTrace(CUR); }, 600);
+  };
+  ["dbgDelay","dbgBreak","dbgBefore","dbgAfter","dbgEvery","dbgTimeout"].forEach(id=>{
+    $(id).onchange = ()=>pushDebug(false);
+  });
+  document.querySelectorAll(".bpAct").forEach(el=>{ el.onchange = ()=>pushDebug(false); });
   ["ckTruth","ckGuide","ckEst","onlysig"].forEach(id => $(id).onchange = render);
 
   const cv = $("map");
@@ -456,6 +600,7 @@ function bind(){
   window.addEventListener("resize", ()=>{ view.init=false; renderMap(); });
 
   setInterval(async ()=>{                       // 自动刷新：仅在文件变化时重绘
+    gateTick();
     if(!$("live").checked || !CUR) return;
     try{
       const r = await fetch("/api/trace?name="+encodeURIComponent(CUR), {cache:"no-store"});
@@ -469,6 +614,7 @@ function bind(){
 
 (async function init(){
   bind();
+  gateTick();
   const list = await loadList();
   if(list.length){ CUR = CUR || list[0].name; $("sel").value = CUR; await loadTrace(CUR); }
   else $("status").textContent = "暂无 trace，点“生成新案例”";

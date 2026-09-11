@@ -29,14 +29,18 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import trace_client
+from step_gate import StepGate, load_debug_config
 
 ROOT = Path(__file__).resolve().parent
 HTML_PATH = ROOT / "webui.html"
+CONFIG_PATH = ROOT / "config.json"
 
 STATE = {
     "trace_dir": Path("traces"),
     "running": None,          # 正在跑的任务（trace 文件名）
     "error": None,
+    "gate": None,             # StepGate
+    "current": None,          # 当前正在看的 trace 名
     "lock": threading.Lock(),
 }
 
@@ -102,26 +106,51 @@ def read_trace(name: str) -> dict:
             "name": name, "running": STATE["running"]}
 
 
-def start_mock(seed: int) -> str:
-    """后台跑一局离线模拟，返回 trace 文件名。"""
-    name = f"mock-seed{seed}.jsonl"
+def run_blocking(mode: str, name: str, *, seed: int | None = None, robot_id: str = "",
+                 url: str = "http://127.0.0.1:2026", log_dir: str = "logs") -> dict | None:
+    """同步跑一局并登记状态（在后台线程里调用）。"""
+    with STATE["lock"]:
+        STATE["running"] = name
+        STATE["error"] = None
+    try:
+        return trace_client.run_session(
+            mode=mode, out=STATE["trace_dir"] / name, seed=seed,
+            robot_id=robot_id, url=url, log_dir=log_dir, gate=STATE["gate"])
+    except Exception as exc:                          # noqa: BLE001
+        STATE["error"] = f"{type(exc).__name__}: {exc}"
+        print(f"[webui] {mode} 运行结束：", exc)
+        return None
+    finally:
+        with STATE["lock"]:
+            STATE["running"] = None
+
+
+def start_run(mode: str, *, seed: int | None = None, robot_id: str = "",
+              url: str = "http://127.0.0.1:2026", log_dir: str = "logs") -> str:
+    """后台跑一局（离线 mock 或实机），返回 trace 文件名。"""
+    name = f"mock-seed{seed}.jsonl" if mode == "mock" else "live.jsonl"
     with STATE["lock"]:
         if STATE["running"]:
             return STATE["running"]
-        STATE["running"] = name
-
-    def job() -> None:
-        try:
-            trace_client.run_session(mode="mock",
-                                     out=STATE["trace_dir"] / name, seed=seed)
-        except Exception as exc:                      # noqa: BLE001
-            STATE["error"] = f"{type(exc).__name__}: {exc}"
-            print("[webui] 模拟运行失败：", exc)
-        finally:
-            STATE["running"] = None
-
-    threading.Thread(target=job, daemon=True).start()
+    threading.Thread(target=lambda: run_blocking(mode, name, seed=seed, robot_id=robot_id,
+                                                 url=url, log_dir=log_dir),
+                     daemon=True).start()
     return name
+
+
+def save_debug_config(cfg: dict | None, path: Path = CONFIG_PATH) -> None:
+    """把调试配置写回 config.json（其余字段原样保留）。"""
+    if not cfg:
+        return
+    raw = {}
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raw = {}
+    raw["debug"] = cfg
+    path.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8")
 
 
 # ------------------------------------------------------------------ HTTP
@@ -156,6 +185,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(list_traces())
         elif u.path == "/api/status":
             self._json({"running": STATE["running"], "error": STATE["error"]})
+        elif u.path == "/api/gate":
+            gate = STATE["gate"]
+            self._json({"gate": gate.state() if gate else None,
+                        "running": STATE["running"], "error": STATE["error"]})
         elif u.path == "/api/trace":
             name = (q.get("name") or [""])[0]
             try:
@@ -168,6 +201,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:                         # noqa: N802
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        body = self._body()
         if u.path == "/api/new":
             raw = (q.get("seed") or ["0"])[0]
             try:
@@ -176,9 +210,55 @@ class Handler(BaseHTTPRequestHandler):
                 seed = 0
             if seed <= 0:
                 seed = int(time.time()) % 100000
-            self._json({"name": start_mock(seed), "seed": seed})
+            self._json({"name": start_run("mock", seed=seed), "seed": seed})
+        elif u.path == "/api/run":
+            mode = body.get("mode", "mock")
+            if mode == "live" and not body.get("robot_id"):
+                self._send(400, "缺少 robot_id".encode("utf-8"),
+                           "text/plain; charset=utf-8")
+                return
+            name = start_run(mode, seed=body.get("seed"),
+                             robot_id=body.get("robot_id", ""),
+                             url=body.get("url", "http://127.0.0.1:2026"),
+                             log_dir=STATE.get("log_dir", "logs"))
+            self._json({"name": name})
+        elif u.path == "/api/gate/step":
+            gate = STATE["gate"]
+            self._json({"ok": bool(gate and gate.release("manual"))})
+        elif u.path == "/api/gate/update":
+            gate = STATE["gate"]
+            patch = body.get("debug", body)
+            cfg = gate.update(patch) if gate else None
+            if body.get("save"):
+                save_debug_config(cfg)
+            self._json({"config": cfg})
+        elif u.path == "/api/gate/abort":
+            gate = STATE["gate"]
+            if gate:
+                gate.request_abort()
+            self._json({"ok": bool(gate)})
         else:
             self._send(404, b"not found", "text/plain; charset=utf-8")
+
+    def _body(self) -> dict:
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = 0
+        if n <= 0:
+            return {}
+        try:
+            data = json.loads(self.rfile.read(n).decode("utf-8"))
+            return data if isinstance(data, dict) else {}
+        except (ValueError, OSError):
+            return {}
+
+
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+    # Windows 下 SO_REUSEADDR 允许两个进程绑同一端口，会出现"以为重启了其实还是旧进程"，
+    # 这里显式关掉，端口被占用时直接报错。
+    allow_reuse_address = False
 
 
 # ------------------------------------------------------------------ 入口
@@ -193,6 +273,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--url", default="http://127.0.0.1:2026")
     p.add_argument("--log-dir", default="logs")
     p.add_argument("--trace-dir", default="traces")
+    p.add_argument("--config", default="config.json",
+                   help="调试配置（延迟/断点）来源，缺省读 config.json 的 debug 段")
     p.add_argument("--port", type=int, default=8800)
     p.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     return p.parse_args()
@@ -201,43 +283,42 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     STATE["trace_dir"] = Path(args.trace_dir)
+    STATE["log_dir"] = args.log_dir
+    STATE["gate"] = StepGate(load_debug_config(args.config))
+    dbg = STATE["gate"].snapshot()
+    print("调试闸门：断点%s，延迟%s"
+          % ("开" if dbg["breakpoint"]["enabled"] else "关",
+             "开" if dbg["delay"]["enabled"] else "关"))
 
     if args.demo:
-        for i in range(args.cases):
-            seed = args.seed + i
-            path = STATE["trace_dir"] / f"mock-seed{seed}.jsonl"
-            print(f"[demo {i + 1}/{args.cases}] 生成 {path} ...")
-            stats = trace_client.run_session(mode="mock", out=path, seed=seed)
-            print(f"   清除 {stats['cleared']} 个，"
-                  f"平均定位清除时间 {stats['平均定位清除时间']:.1f} s")
+        def demo_job() -> None:
+            time.sleep(0.8)                     # 先把网页放出来，断点才有地方点
+            for i in range(args.cases):
+                seed = args.seed + i
+                print(f"[demo {i + 1}/{args.cases}] 生成 mock-seed{seed}.jsonl ...")
+                stats = run_blocking("mock", f"mock-seed{seed}.jsonl", seed=seed)
+                if stats:
+                    print(f"   清除 {stats['cleared']} 个，"
+                          f"平均定位清除时间 {stats['平均定位清除时间']:.1f} s")
+
+        threading.Thread(target=demo_job, daemon=True).start()
     elif args.run:
         if not args.robot_id:
             print("--run 需要 --robot-id")
             return 2
-        path = STATE["trace_dir"] / "live.jsonl"
         print("正在接模拟器跑一局（网页会在有数据后自动刷新）...")
-        with STATE["lock"]:
-            STATE["running"] = path.name
-
-        def job() -> None:
-            try:
-                trace_client.run_session(mode="live", out=path,
-                                         robot_id=args.robot_id, url=args.url,
-                                         log_dir=args.log_dir)
-            except Exception as exc:                   # noqa: BLE001
-                STATE["error"] = f"{type(exc).__name__}: {exc}"
-                print("[webui] 实机运行失败：", exc)
-            finally:
-                STATE["running"] = None
-
-        threading.Thread(target=job, daemon=True).start()
+        start_run("live", robot_id=args.robot_id, url=args.url, log_dir=args.log_dir)
 
     if not list_traces():
         print("trace 目录为空，自动生成一个离线案例 ...")
-        trace_client.run_session(mode="mock",
-                                 out=STATE["trace_dir"] / "mock-seed1.jsonl", seed=1)
+        start_run("mock", seed=1)
 
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    try:
+        server = Server(("127.0.0.1", args.port), Handler)
+    except OSError as exc:
+        print(f"端口 {args.port} 绑定失败：{exc}")
+        print(f"可能已有 webui 在运行；换端口重试：python webui.py --port {args.port + 1}")
+        return 3
     url = f"http://127.0.0.1:{args.port}/"
     print(f"可视化已启动：{url}")
     print(f"trace 目录：{STATE['trace_dir'].resolve()}")
