@@ -32,14 +32,16 @@
   .card .k{font-size:11px;color:var(--ink3);letter-spacing:.02em}
   .card .v{font-size:20px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
   .card .s{font-size:11px;color:var(--ink3);margin-top:1px}
-  .row{display:grid;grid-template-columns:minmax(420px,1.15fr) minmax(360px,1fr);gap:16px}
+  .row{display:grid;grid-template-columns:minmax(300px,.72fr) minmax(560px,1.28fr);
+       gap:16px;align-items:start}
   @media(max-width:1050px){.row{grid-template-columns:1fr}}
+  .col{display:flex;flex-direction:column;gap:16px;min-width:0}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
   .panel>h2{font-size:13px;margin:0;padding:9px 12px;border-bottom:1px solid var(--line);
             background:#fafbfc;display:flex;align-items:center;gap:10px}
   .panel>h2 .grow{flex:1}
   .panel .body{padding:12px}
-  canvas{display:block;width:100%;height:520px;background:#fff;cursor:grab;touch-action:none}
+  canvas{display:block;width:100%;height:340px;background:#fff;cursor:grab;touch-action:none}
   canvas:active{cursor:grabbing}
   .legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--ink2);padding:8px 12px;
           border-top:1px solid var(--line)}
@@ -47,6 +49,7 @@
             vertical-align:-1px}
   table{border-collapse:separate;border-spacing:0;font-size:12px;font-variant-numeric:tabular-nums}
   .scroll{overflow:auto;max-height:560px}
+  .scroll.tall{max-height:calc(100vh - 210px);min-height:320px}
   th,td{border-bottom:1px solid var(--line);padding:3px 6px;white-space:nowrap;text-align:right}
   thead th{position:sticky;top:0;background:#fafbfc;border-bottom:1px solid var(--line2);z-index:2;
            font-weight:600;color:var(--ink2)}
@@ -60,6 +63,10 @@
   td.ch.s3{background:#fef3c7;color:#b45309;font-weight:600}
   td.ch.s4{background:#dcfce7;color:#15803d;font-weight:700}
   td.ch.now{outline:2px solid var(--blue);outline-offset:-2px}
+  tr.newest td{background:#eff6ff}
+  tr.newest td.ch{box-shadow:inset 0 0 0 1px #bfdbfe}
+  @keyframes flash{from{background:#dbeafe}to{background:#eff6ff}}
+  tr.newest{animation:flash .9s ease-out}
   .tag{padding:1px 6px;border-radius:5px;font-size:11px;font-weight:600}
   .t-dir{background:#dbeafe;color:#1d4ed8}
   .t-no{background:#eef2f7;color:#64748b}
@@ -145,44 +152,47 @@
   <div class="cards" id="cards"></div>
 
   <div class="row">
+    <div class="col">
+      <div class="panel">
+        <h2>圆形地图 · 轨迹与清除点
+          <span class="grow"></span>
+          <label class="ck"><input type="checkbox" id="ckTruth" checked> 真值</label>
+          <label class="ck"><input type="checkbox" id="ckGuide" checked> 测站/覆盖</label>
+          <label class="ck"><input type="checkbox" id="ckEst" checked> 定位结果</label>
+        </h2>
+        <canvas id="map"></canvas>
+        <div class="legend">
+          <span><i style="background:#94a3b8"></i>轨迹</span>
+          <span><i style="background:#2563eb"></i>测得示向度</span>
+          <span><i style="background:#cbd5e1"></i>无信号</span>
+          <span><i style="background:#d97706"></i>距离过近</span>
+          <span><i style="background:#16a34a"></i>成功清除点</span>
+          <span><i style="background:#dc2626"></i>未发现</span>
+          <span><i style="background:#7c3aed"></i>定位结果(圆=保证误差界)</span>
+          <span><i style="background:#dc2626;border-radius:0"></i>真值(仅离线可见)</span>
+          <span class="muted">滚轮缩放 / 拖动平移 / 双击复位</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>时间构成与频道终态</h2>
+        <div class="body">
+          <div id="bar"></div>
+          <table class="mini" id="breakdown"></table>
+          <div style="height:10px"></div>
+          <table class="mini" id="chstate"></table>
+        </div>
+      </div>
+    </div>
+
     <div class="panel">
-      <h2>圆形地图 · 轨迹与清除点
+      <h2>频道状态表
+        <span class="muted">（行 = 每一次探测/清除，<b>最新一次在最上面</b>；列 = 20 个频道）</span>
         <span class="grow"></span>
-        <label class="ck"><input type="checkbox" id="ckTruth" checked> 真值</label>
-        <label class="ck"><input type="checkbox" id="ckGuide" checked> 测站/覆盖</label>
-        <label class="ck"><input type="checkbox" id="ckEst" checked> 定位结果</label>
+        <span id="rowcount" class="muted"></span>
       </h2>
-      <canvas id="map"></canvas>
-      <div class="legend">
-        <span><i style="background:#94a3b8"></i>轨迹</span>
-        <span><i style="background:#2563eb"></i>测得示向度</span>
-        <span><i style="background:#cbd5e1"></i>无信号</span>
-        <span><i style="background:#d97706"></i>距离过近</span>
-        <span><i style="background:#16a34a"></i>成功清除点</span>
-        <span><i style="background:#dc2626"></i>未发现</span>
-        <span><i style="background:#7c3aed"></i>定位结果(圆=保证误差界)</span>
-        <span><i style="background:#dc2626;border-radius:0"></i>真值(仅离线可见)</span>
-        <span class="muted">滚轮缩放 / 拖动平移 / 双击复位</span>
-      </div>
+      <div class="scroll tall"><table id="tbl"><thead></thead><tbody></tbody></table></div>
     </div>
-
-    <div class="panel">
-      <h2>时间构成与频道终态</h2>
-      <div class="body">
-        <div id="bar"></div>
-        <table class="mini" id="breakdown"></table>
-        <div style="height:10px"></div>
-        <table class="mini" id="chstate"></table>
-      </div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <h2>频道状态表 <span class="muted">（行 = 每一次探测/清除，列 = 20 个频道）</span>
-      <span class="grow"></span>
-      <span id="rowcount" class="muted"></span>
-    </h2>
-    <div class="scroll"><table id="tbl"><thead></thead><tbody></tbody></table></div>
   </div>
 </main>
 
@@ -423,13 +433,13 @@ function renderTable(){
     if(!only) return true;
     if(e.kind==="clear" && e.result==="success") return true;
     return e.kind==="measure" && (e.result==="direction" || e.result==="near");
-  });
+  }).reverse();                                     // 最新一次动作排在第一行
   const head = `<tr>
     <th>#</th><th>虚拟时刻(s)</th><th>动作</th><th>位置</th><th>频道</th><th>结果</th><th>示向度</th>`
     + CHS.map(c=>`<th class="chan c">${c}</th>`).join("") + `</tr>`;
   $("tbl").tHead.innerHTML = head;
 
-  const body = rows.map(e=>{
+  const body = rows.map((e,rowIdx)=>{
     let kind, res, svd="";
     if(e.kind==="enter"){ kind=`<span class="tag t-enter">/enter</span>`; res="开始"; }
     else if(e.kind==="measure"){
@@ -452,7 +462,7 @@ function renderTable(){
       const now = (e.kind==="measure" && e.ch===c) || (e.kind==="clear" && e.ch===c);
       return `<td class="ch s${cell.code}${now?" now":""}">${cell.text}</td>`;
     }).join("");
-    return `<tr class="mrow" title="${tip}">
+    return `<tr class="mrow${rowIdx===0?" newest":""}" title="${tip}">
       <td class="c">${e.kind==="enter" ? 0 : e.seq}</td>
       <td>${(e.t||0).toFixed(1)}</td>
       <td class="c">${kind}</td>
