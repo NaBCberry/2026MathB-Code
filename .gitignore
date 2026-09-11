@@ -49,5 +49,6 @@ Thumbs.db
 # ---- 自动生成的中间产物 ----
 _extracted/
 logs/
+traces/
 
 articles/

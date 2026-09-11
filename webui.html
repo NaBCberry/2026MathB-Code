@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>干扰源自动定位清除 —— 可视化</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --panel:#ffffff; --line:#e2e8f0; --line2:#cbd5e1;
+    --ink:#0f172a; --ink2:#475569; --ink3:#94a3b8;
+    --blue:#2563eb; --green:#16a34a; --amber:#d97706; --red:#dc2626; --violet:#7c3aed;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+  header{position:sticky;top:0;z-index:30;background:var(--panel);border-bottom:1px solid var(--line);
+         padding:10px 18px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  h1{font-size:16px;margin:0 12px 0 0;font-weight:700;white-space:nowrap}
+  select,button,input{font:inherit;padding:5px 9px;border:1px solid var(--line2);border-radius:7px;
+       background:#fff;color:var(--ink)}
+  button{cursor:pointer}
+  button:hover{background:#f1f5f9}
+  button.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+  button.primary:hover{background:#1d4ed8}
+  .grow{flex:1}
+  .spin{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--amber);
+        margin-right:6px;animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.25}}
+  main{padding:16px;display:flex;flex-direction:column;gap:16px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .card .k{font-size:11px;color:var(--ink3);letter-spacing:.02em}
+  .card .v{font-size:20px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+  .card .s{font-size:11px;color:var(--ink3);margin-top:1px}
+  .row{display:grid;grid-template-columns:minmax(420px,1.15fr) minmax(360px,1fr);gap:16px}
+  @media(max-width:1050px){.row{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .panel>h2{font-size:13px;margin:0;padding:9px 12px;border-bottom:1px solid var(--line);
+            background:#fafbfc;display:flex;align-items:center;gap:10px}
+  .panel>h2 .grow{flex:1}
+  .panel .body{padding:12px}
+  canvas{display:block;width:100%;height:520px;background:#fff;cursor:grab;touch-action:none}
+  canvas:active{cursor:grabbing}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--ink2);padding:8px 12px;
+          border-top:1px solid var(--line)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;
+            vertical-align:-1px}
+  table{border-collapse:separate;border-spacing:0;font-size:12px;font-variant-numeric:tabular-nums}
+  .scroll{overflow:auto;max-height:560px}
+  th,td{border-bottom:1px solid var(--line);padding:3px 6px;white-space:nowrap;text-align:right}
+  thead th{position:sticky;top:0;background:#fafbfc;border-bottom:1px solid var(--line2);z-index:2;
+           font-weight:600;color:var(--ink2)}
+  td.c,th.c{text-align:center}
+  th.chan{background:#f1f5f9}
+  tr.mrow:hover td{background:#f8fafc}
+  td.ch{min-width:46px;text-align:center;border-left:1px solid #eef2f7;
+        background:#fcfdfe;color:#cbd5e1}
+  td.ch.s1{background:#eef2f7;color:#94a3b8}
+  td.ch.s2{background:#dbeafe;color:#1d4ed8;font-weight:600}
+  td.ch.s3{background:#fef3c7;color:#b45309;font-weight:600}
+  td.ch.s4{background:#dcfce7;color:#15803d;font-weight:700}
+  td.ch.now{outline:2px solid var(--blue);outline-offset:-2px}
+  .tag{padding:1px 6px;border-radius:5px;font-size:11px;font-weight:600}
+  .t-dir{background:#dbeafe;color:#1d4ed8}
+  .t-no{background:#eef2f7;color:#64748b}
+  .t-near{background:#fef3c7;color:#b45309}
+  .t-ok{background:#dcfce7;color:#15803d}
+  .t-miss{background:#fee2e2;color:#b91c1c}
+  .t-enter{background:#ede9fe;color:#6d28d9}
+  .bar{display:flex;height:16px;border-radius:5px;overflow:hidden;border:1px solid var(--line)}
+  .bar>div{height:100%}
+  .mini{width:100%;border-collapse:collapse;font-size:12px}
+  .mini th,.mini td{text-align:left;padding:3px 6px}
+  .mini td.n{text-align:right}
+  .muted{color:var(--ink3)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{border:1px solid var(--line2);border-radius:20px;padding:2px 9px;font-size:12px;background:#fff}
+  .chip.ok{background:#dcfce7;border-color:#86efac;color:#15803d}
+  .chip.absent{background:#f1f5f9;color:#64748b}
+  .chip.miss{background:#fee2e2;border-color:#fca5a5;color:#b91c1c}
+  label.ck{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--ink2)}
+</style>
+</head>
+<body>
+<header>
+  <h1>干扰源自动定位清除 · 可视化</h1>
+  <select id="sel" title="选择 trace"></select>
+  <button id="reload">刷新</button>
+  <button class="primary" id="newsample">生成新案例</button>
+  <label class="ck"><input type="checkbox" id="live" checked> 自动刷新</label>
+  <label class="ck"><input type="checkbox" id="onlysig"> 只看有信号/清除的行</label>
+  <span class="grow"></span>
+  <span id="status" class="muted"></span>
+</header>
+
+<main>
+  <div class="cards" id="cards"></div>
+
+  <div class="row">
+    <div class="panel">
+      <h2>圆形地图 · 轨迹与清除点
+        <span class="grow"></span>
+        <label class="ck"><input type="checkbox" id="ckTruth" checked> 真值</label>
+        <label class="ck"><input type="checkbox" id="ckGuide" checked> 测站/覆盖</label>
+        <label class="ck"><input type="checkbox" id="ckEst" checked> 定位结果</label>
+      </h2>
+      <canvas id="map"></canvas>
+      <div class="legend">
+        <span><i style="background:#94a3b8"></i>轨迹</span>
+        <span><i style="background:#2563eb"></i>测得示向度</span>
+        <span><i style="background:#cbd5e1"></i>无信号</span>
+        <span><i style="background:#d97706"></i>距离过近</span>
+        <span><i style="background:#16a34a"></i>成功清除点</span>
+        <span><i style="background:#dc2626"></i>未发现</span>
+        <span><i style="background:#7c3aed"></i>定位结果(圆=保证误差界)</span>
+        <span><i style="background:#dc2626;border-radius:0"></i>真值(仅离线可见)</span>
+        <span class="muted">滚轮缩放 / 拖动平移 / 双击复位</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>时间构成与频道终态</h2>
+      <div class="body">
+        <div id="bar"></div>
+        <table class="mini" id="breakdown"></table>
+        <div style="height:10px"></div>
+        <table class="mini" id="chstate"></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>频道状态表 <span class="muted">（行 = 每一次探测/清除，列 = 20 个频道）</span>
+      <span class="grow"></span>
+      <span id="rowcount" class="muted"></span>
+    </h2>
+    <div class="scroll"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+  </div>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const CHS = Array.from({length:20},(_,i)=>i+1);
+let DATA = null, MODEL = null, CUR = "";
+let view = {k:1, cx:0, cy:0, init:false};
+
+/* ---------------------------------------------------------------- 数据 */
+async function api(path, opt){ const r = await fetch(path, opt); if(!r.ok) throw new Error(r.status); return r.json(); }
+
+async function loadList(){
+  const list = await api("/api/traces");
+  const sel = $("sel"); sel.innerHTML = "";
+  for(const t of list){
+    const o = document.createElement("option");
+    o.value = t.name;
+    o.textContent = `${t.name}  ·  ${t.mode==="mock" ? "离线" : "实机"}  ·  清除 ${t.cleared ?? "-"}`
+                  + (t.n_sources ? `/${t.n_sources}` : "");
+    sel.appendChild(o);
+  }
+  if(list.length && !list.some(t=>t.name===CUR)) CUR = list[0].name;
+  if(CUR) sel.value = CUR;
+  return list;
+}
+
+async function loadTrace(name){
+  if(!name) return;
+  DATA = await api("/api/trace?name=" + encodeURIComponent(name));
+  MODEL = buildModel(DATA);
+  view.init = false;
+  render();
+}
+
+function snapshot(st){
+  return CHS.map(c=>{
+    const s = st[c];
+    if(s.cleared) return {code:4, text:"已清"};
+    if(s.code===3) return {code:3, text:"近距"};
+    if(s.code===2) return {code:2, text:s.last_svd==null? "°" : s.last_svd.toFixed(1)+"°"};
+    if(s.code===1) return {code:1, text:"无"};
+    return {code:0, text:""};
+  });
+}
+
+function buildModel(data){
+  const st = {}; CHS.forEach(c=> st[c] = {code:0, last_svd:null, cleared:false,
+                                          n_dir:0, n_no:0, near:false});
+  const rows = [];
+  for(const e of data.events){
+    if(e.kind==="measure"){
+      const s = st[e.ch];
+      if(e.result==="direction"){ s.code=2; s.last_svd=e.svd; s.n_dir++; }
+      else if(e.result==="near"){ s.code=3; s.near=true; }
+      else { s.n_no++; if(s.code===0) s.code=1; }
+    } else if(e.kind==="clear"){
+      if(e.result==="success") st[e.ch].cleared = true;
+    }
+    rows.push(Object.assign({cells:snapshot(st)}, e));
+  }
+  return {rows, st, meta:data.meta||{}, summary:data.summary||{}, name:data.name};
+}
+
+/* ---------------------------------------------------------------- 汇总 */
+function fmt(x, n=1){ return (x==null||!isFinite(x)) ? "-" : Number(x).toFixed(n); }
+
+function renderCards(){
+  const {meta, summary} = MODEL;
+  const T = summary.totals || {};
+  const S = summary.stats || {};
+  const cleared = S.cleared ?? 0;
+  const total = meta.n_sources ?? null;
+  const vtot = T.virtual_total_s ?? summary.t ?? 0;
+  const avg = cleared ? vtot/cleared : null;
+  const rate = total ? cleared/total : null;
+  const cards = [
+    ["干扰源总数", total!=null? total : "未知", total!=null? "" : "实机测试不返回真值"],
+    ["已清除", cleared, "被清除干扰源个数"],
+    ["清除比例", rate!=null? (rate*100).toFixed(0)+"%" : "—", rate!=null? `${cleared}/${total}` : ""],
+    ["平均定位清除时间", avg!=null? fmt(avg)+" s" : "—", "虚拟总时间 ÷ 清除个数"],
+    ["虚拟总时间", fmt(vtot)+" s", "含移动/换频/检测/清除"],
+    ["移动路程", fmt(T.move_m,0)+" m", `耗时 ${fmt(T.move_s)} s`],
+    ["检测次数", T.n_measure ?? 0, `换频道 ${T.n_switch ?? 0} 次`],
+    ["清除次数", T.n_clear ?? 0, `其中落空 ${T.n_clear_miss ?? 0} 次`],
+  ];
+  $("cards").innerHTML = cards.map(c=>
+    `<div class="card"><div class="k">${c[0]}</div><div class="v">${c[1]}</div>
+     <div class="s">${c[2]||""}</div></div>`).join("");
+
+  const parts = [["移动", T.move_s||0, "#64748b"], ["换频道", T.switch_s||0, "#f59e0b"],
+                 ["检测", T.measure_s||0, "#2563eb"], ["清除", T.clear_s||0, "#16a34a"]];
+  const sum = parts.reduce((a,b)=>a+b[1],0) || 1;
+  $("bar").innerHTML = `<div class="bar">` + parts.map(p=>
+    `<div style="width:${(100*p[1]/sum).toFixed(2)}%;background:${p[2]}" title="${p[0]} ${fmt(p[1])} s"></div>`
+  ).join("") + `</div>`;
+  $("breakdown").innerHTML = `<tr><th>时间构成</th><th style="text-align:right">秒</th>
+      <th style="text-align:right">占比</th></tr>` + parts.map(p=>
+    `<tr><td>${p[0]}</td><td class="n">${fmt(p[1])}</td><td class="n">${(100*p[1]/sum).toFixed(1)}%</td></tr>`
+  ).join("") + `<tr><td><b>合计（虚拟）</b></td><td class="n"><b>${fmt(sum)}</b></td><td class="n">100%</td></tr>`;
+
+  const fs = summary.final_state || {};
+  const rows = CHS.map(c=>{
+    const s = MODEL.st[c], f = fs[String(c)] || {};
+    let state = "未测到";
+    if(s.cleared) state = "已清除";
+    else if(s.near) state = "近距(≤5m)";
+    else if(s.n_dir>=2) state = "已定位";
+    else if(s.n_dir===1) state = "仅1条示向度";
+    else if(s.n_no>0) state = "无信号";
+    const pos = f.center ? `(${f.center[0].toFixed(0)}, ${f.center[1].toFixed(0)})` : "";
+    const rad = (f.radius!=null && f.radius<1e6) ? fmt(f.radius)+" m" : "";
+    return `<tr><td>频道 ${c}</td><td>${state}</td><td class="n">${s.n_dir}</td>
+            <td class="n">${s.n_no}</td><td class="muted">${pos}${rad? " ± "+rad:""}</td></tr>`;
+  }).join("");
+  $("chstate").innerHTML = `<tr><th>频道</th><th>终态</th><th style="text-align:right">示向度</th>
+      <th style="text-align:right">无信号</th><th>定位结果(估计点 ± 保证误差)</th></tr>` + rows;
+
+  if(meta.mode==="live") $("status").textContent = "实机测试：干扰源真值不可见";
+}
+
+/* ---------------------------------------------------------------- 地图 */
+function resizeCanvas(){
+  const cv = $("map"), r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio||1;
+  cv.width = Math.round(r.width*dpr); cv.height = Math.round(r.height*dpr);
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {w:r.width, h:r.height};
+}
+function fit(){
+  const cv = $("map"), r = cv.getBoundingClientRect();
+  const pad = 26, k = Math.min(r.width, r.height)/2 - pad;
+  view.k = k / 1800; view.cx = r.width/2; view.cy = r.height/2; view.init = true;
+}
+const TX = x => view.cx + x*view.k, TY = y => view.cy - y*view.k;
+
+function renderMap(){
+  const cv = $("map"), ctx = cv.getContext("2d");
+  const {w,h} = resizeCanvas();
+  if(!view.init) fit();
+  ctx.clearRect(0,0,w,h);
+  const R = 1800, meta = MODEL.meta;
+
+  ctx.save();
+  ctx.beginPath(); ctx.arc(TX(0),TY(0),R*view.k,0,Math.PI*2);
+  ctx.fillStyle="#fbfdff"; ctx.fill();
+  ctx.strokeStyle="#94a3b8"; ctx.lineWidth=1.5; ctx.stroke();
+  for(const rr of [600,1200]){                       // 距离环
+    ctx.beginPath(); ctx.arc(TX(0),TY(0),rr*view.k,0,Math.PI*2);
+    ctx.strokeStyle="#eef2f7"; ctx.lineWidth=1; ctx.stroke();
+  }
+  ctx.beginPath(); ctx.moveTo(TX(-R),TY(0)); ctx.lineTo(TX(R),TY(0));
+  ctx.moveTo(TX(0),TY(-R)); ctx.lineTo(TX(0),TY(R));
+  ctx.strokeStyle="#e2e8f0"; ctx.lineWidth=1; ctx.stroke();
+
+  if($("ckGuide").checked){                          // 覆盖测站 + 1000m 保守覆盖圆
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0,0,w,h); ctx.clip();
+    const st = [[0,0]];
+    for(let i=0;i<6;i++){ const a=2*Math.PI*i/6; st.push([1300*Math.cos(a),1300*Math.sin(a)]); }
+    for(const [x,y] of st){
+      ctx.beginPath(); ctx.arc(TX(x),TY(y),1000*view.k,0,Math.PI*2);
+      ctx.strokeStyle="rgba(37,99,235,.16)"; ctx.lineWidth=1; ctx.stroke();
+    }
+    ctx.restore();
+    for(const [x,y] of st){
+      ctx.beginPath(); ctx.arc(TX(x),TY(y),3,0,Math.PI*2);
+      ctx.fillStyle="#60a5fa"; ctx.fill();
+    }
+  }
+
+  if($("ckTruth").checked && meta.sources){          // 真值
+    for(const s of meta.sources){
+      ctx.beginPath(); ctx.arc(TX(s.x),TY(s.y),5,0,Math.PI*2);
+      ctx.strokeStyle="#dc2626"; ctx.lineWidth=2; ctx.stroke();
+      ctx.fillStyle="rgba(220,38,38,.15)"; ctx.fill();
+    }
+  }
+
+  if($("ckEst").checked){                            // 策略的定位结果
+    const fs = MODEL.summary.final_state || {};
+    for(const c of CHS){
+      const f = fs[String(c)]; if(!f || !f.center) continue;
+      const [x,y] = f.center;
+      if(f.radius!=null && f.radius>0 && f.radius<1e6){
+        ctx.beginPath(); ctx.arc(TX(x),TY(y),f.radius*view.k,0,Math.PI*2);
+        ctx.fillStyle="rgba(124,58,237,.12)"; ctx.fill();
+        ctx.strokeStyle="rgba(124,58,237,.5)"; ctx.lineWidth=1; ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(TX(x),TY(y),3.2,0,Math.PI*2);
+      ctx.fillStyle="#7c3aed"; ctx.fill();
+    }
+  }
+
+  const ev = MODEL.rows.filter(e=>e.kind==="measure"||e.kind==="enter");
+  ctx.beginPath();                                   // 轨迹
+  ev.forEach((e,i)=>{ const X=TX(e.x),Y=TY(e.y); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
+  ctx.strokeStyle="#94a3b8"; ctx.lineWidth=1.2; ctx.stroke();
+
+  for(const e of MODEL.rows){                        // 探测点
+    if(e.kind!=="measure") continue;
+    const col = e.result==="direction" ? "#2563eb" : e.result==="near" ? "#d97706" : "#cbd5e1";
+    ctx.beginPath(); ctx.arc(TX(e.x),TY(e.y), e.result==="no_signal"?1.8:2.6, 0, Math.PI*2);
+    ctx.fillStyle = col; ctx.fill();
+  }
+
+  let n=0;                                           // 清除点
+  for(const e of MODEL.rows){
+    if(e.kind!=="clear") continue;
+    n++;
+    const X=TX(e.x), Y=TY(e.y);
+    if(e.result==="success"){
+      ctx.beginPath(); ctx.arc(X,Y,7,0,Math.PI*2);
+      ctx.fillStyle="rgba(22,163,74,.25)"; ctx.fill();
+      ctx.beginPath(); ctx.arc(X,Y,4.2,0,Math.PI*2);
+      ctx.fillStyle="#16a34a"; ctx.fill();
+      ctx.strokeStyle="#fff"; ctx.lineWidth=1.2; ctx.stroke();
+      ctx.fillStyle="#14532d"; ctx.font="bold 11px sans-serif"; ctx.textAlign="center";
+      ctx.fillText(String(e.ch), X, Y-9);
+    }else{
+      ctx.strokeStyle="#dc2626"; ctx.lineWidth=1.4;
+      ctx.beginPath(); ctx.moveTo(X-3.4,Y-3.4); ctx.lineTo(X+3.4,Y+3.4);
+      ctx.moveTo(X+3.4,Y-3.4); ctx.lineTo(X-3.4,Y+3.4); ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  ctx.fillStyle="#475569"; ctx.font="12px sans-serif"; ctx.textAlign="left";
+  ctx.fillText(`轨迹点 ${MODEL.rows.filter(e=>e.kind==="measure").length} 个 · `
+              +`清除点 ${n} 个 · 半径 1800 m`, 10, h-10);
+}
+
+/* ---------------------------------------------------------------- 状态表 */
+function renderTable(){
+  const only = $("onlysig").checked;
+  const rows = MODEL.rows.filter(e=>{
+    if(!only) return true;
+    if(e.kind==="clear" && e.result==="success") return true;
+    return e.kind==="measure" && (e.result==="direction" || e.result==="near");
+  });
+  const head = `<tr>
+    <th>#</th><th>虚拟时刻(s)</th><th>动作</th><th>位置</th><th>频道</th><th>结果</th><th>示向度</th>`
+    + CHS.map(c=>`<th class="chan c">${c}</th>`).join("") + `</tr>`;
+  $("tbl").tHead.innerHTML = head;
+
+  const body = rows.map(e=>{
+    let kind, res, svd="";
+    if(e.kind==="enter"){ kind=`<span class="tag t-enter">/enter</span>`; res="开始"; }
+    else if(e.kind==="measure"){
+      kind="检测";
+      res = e.result==="direction" ? `<span class="tag t-dir">有信号</span>`
+          : e.result==="near" ? `<span class="tag t-near">距离过近</span>`
+          : `<span class="tag t-no">无信号</span>`;
+      svd = (e.svd==null)? "" : e.svd.toFixed(2)+"°";
+    }else{
+      kind="清除";
+      res = e.result==="success" ? `<span class="tag t-ok">已清除</span>`
+          : `<span class="tag t-miss">未发现</span>`;
+    }
+    const tip = e.move_m!=null
+      ? `移动 ${e.move_m.toFixed(1)} m / ${e.move_s.toFixed(1)} s；换频 ${(e.switch_s||0).toFixed(0)} s；`
+        +`动作 ${(e.action_s||0).toFixed(0)} s`
+      : "";
+    const cells = CHS.map((c,i)=>{
+      const cell = e.cells ? e.cells[i] : {code:0,text:""};
+      const now = (e.kind==="measure" && e.ch===c) || (e.kind==="clear" && e.ch===c);
+      return `<td class="ch s${cell.code}${now?" now":""}">${cell.text}</td>`;
+    }).join("");
+    return `<tr class="mrow" title="${tip}">
+      <td class="c">${e.kind==="enter" ? 0 : e.seq}</td>
+      <td>${(e.t||0).toFixed(1)}</td>
+      <td class="c">${kind}</td>
+      <td>(${(e.x||0).toFixed(0)}, ${(e.y||0).toFixed(0)})</td>
+      <td class="c">${e.ch??""}</td>
+      <td class="c">${res}</td>
+      <td>${svd}</td>${cells}</tr>`;
+  }).join("");
+  $("tbl").tBodies[0].innerHTML = body;
+  $("rowcount").textContent = `${rows.length} 行 × 20 频道`;
+}
+
+function render(){ renderCards(); renderMap(); renderTable(); }
+
+/* ---------------------------------------------------------------- 交互 */
+function bind(){
+  $("sel").onchange = e => { CUR = e.target.value; loadTrace(CUR); };
+  $("reload").onclick = () => loadTrace(CUR);
+  $("newsample").onclick = async () => {
+    $("status").textContent = "正在生成新案例…";
+    const r = await api("/api/new?seed="+Math.floor(Math.random()*90000+1), {method:"POST"});
+    const t0 = Date.now();
+    const wait = setInterval(async ()=>{
+      const list = await loadList();
+      if(list.some(t=>t.name===r.name) || Date.now()-t0>30000){
+        clearInterval(wait); CUR = r.name; $("sel").value = r.name;
+        await loadTrace(CUR); $("status").textContent = "";
+      }
+    }, 500);
+  };
+  ["ckTruth","ckGuide","ckEst","onlysig"].forEach(id => $(id).onchange = render);
+
+  const cv = $("map");
+  let drag = null;
+  cv.addEventListener("wheel", e=>{
+    e.preventDefault();
+    const r = cv.getBoundingClientRect(), mx = e.clientX-r.left, my = e.clientY-r.top;
+    const f = e.deltaY < 0 ? 1.15 : 1/1.15;
+    view.cx = mx - (mx-view.cx)*f; view.cy = my - (my-view.cy)*f; view.k *= f;
+    renderMap();
+  }, {passive:false});
+  cv.addEventListener("pointerdown", e=>{ drag = {x:e.clientX, y:e.clientY,
+      cx:view.cx, cy:view.cy}; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointermove", e=>{
+    if(!drag) return;
+    view.cx = drag.cx + (e.clientX-drag.x); view.cy = drag.cy + (e.clientY-drag.y); renderMap();
+  });
+  cv.addEventListener("pointerup", e=>{ drag=null; cv.releasePointerCapture(e.pointerId); });
+  cv.addEventListener("dblclick", ()=>{ view.init=false; renderMap(); });
+  window.addEventListener("resize", ()=>{ view.init=false; renderMap(); });
+
+  setInterval(async ()=>{                       // 自动刷新：仅在文件变化时重绘
+    if(!$("live").checked || !CUR) return;
+    try{
+      const r = await fetch("/api/trace?name="+encodeURIComponent(CUR), {cache:"no-store"});
+      const d = await r.json();
+      if(d.events && d.events.length !== (DATA.events||[]).length){ DATA = d; MODEL = buildModel(d); render(); }
+      const st = await api("/api/status");
+      $("status").textContent = st.running ? "正在运行…" : (st.error ? "错误："+st.error : "");
+    }catch(_){}
+  }, 1500);
+}
+
+(async function init(){
+  bind();
+  const list = await loadList();
+  if(list.length){ CUR = CUR || list[0].name; $("sel").value = CUR; await loadTrace(CUR); }
+  else $("status").textContent = "暂无 trace，点“生成新案例”";
+})();
+</script>
+</body>
+</html>
