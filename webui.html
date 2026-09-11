@@ -229,6 +229,7 @@
 const $ = id => document.getElementById(id);
 const CHS = Array.from({length:20},(_,i)=>i+1);
 let DATA = null, MODEL = null, CUR = "";
+let modelGen = 0, rafGen = 0, loadSeq = 0;   // 整表重建的代次 / 并发加载只认最后一次
 let view = {k:1, cx:0, cy:0, init:false};
 
 /* ---------------------------------------------------------------- 数据 */
@@ -329,9 +330,13 @@ async function loadList(){
 
 async function loadTrace(name){
   if(!name) return;
+  const my = ++loadSeq;
   const r = await api("/api/trace?name=" + encodeURIComponent(name));
+  if(my !== loadSeq) return;                 // 期间又发起了新的加载，丢弃这次结果
   DATA = {meta:r.meta||{}, summary:r.summary||{}, events:r.events||[], name:r.name};
   MODEL = buildModel(DATA);
+  modelGen++;                                // 整表要重建：作废还没画出来的增量行
+  pendingRows = 0; pendingFull = false;
   showFileAlgo();
   view.init = false;
   render();
@@ -363,7 +368,7 @@ function snapshot(st){
 function newModel(){
   const st = {}; CHS.forEach(c=> st[c] = {code:0, last_svd:null, cleared:false,
                                           n_dir:0, n_no:0, near:false});
-  return {rows:[], st, meta:{}, summary:{}, name:""};
+  return {rows:[], st, meta:{}, summary:{}, name:"", lastSeq:-1};
 }
 
 /* 只处理新增事件：把新行追加到 MODEL.rows，并顺带推进频道状态 */
@@ -372,6 +377,12 @@ function appendEvents(model, events){
   let added = 0;
   for(const e of events){
     if(e.kind!=="enter" && e.kind!=="measure" && e.kind!=="clear") continue;  // 闸门等事件不上表
+    // 同一批事件可能被送两次（重连的一瞬间两条通道重叠、或者文件被重读），
+    // 用动作序号 seq 去重：只认比已有更新的，避免"多出一行又缩回去"。
+    if(e.seq != null){
+      if(e.seq <= model.lastSeq) continue;
+      model.lastSeq = e.seq;
+    }
     if(e.kind==="measure"){
       const s = st[e.ch];
       if(e.result==="direction"){ s.code=2; s.last_svd=e.svd; s.n_dir++; }
@@ -979,16 +990,20 @@ function scheduleRender(rows, full){
   pendingFull = pendingFull || !!full;
   if(rafPending) return;
   rafPending = true;
+  rafGen = modelGen;                 // 记住这批增量属于哪一代模型
   requestAnimationFrame(flushRender);
 }
 
 function flushRender(){
   rafPending = false;
-  const rows = pendingRows, full = pendingFull;
+  const rows = pendingRows, full = pendingFull, gen = rafGen;
   pendingRows = 0; pendingFull = false;
   if(!MODEL) return;
   renderCards();
   renderMap();
+  // 期间发生过整表重建（换 trace / 文件被新一局覆盖 / 手动刷新）：
+  // 新行已经包含在重建后的表里了，再插一次就会"多出来一行"，所以直接跳过。
+  if(gen !== modelGen) return;
   if(full) renderTableFull();
   else if(rows) prependRows(MODEL.rows.slice(-rows));
 }
@@ -1026,8 +1041,14 @@ function onPayload(d, wantTrace){
 }
 
 function closeStream(){
-  if(es){ try{ es.close(); }catch(_){} es = null; }
+  const old = es;
+  es = null;
   streamOn = false;
+  if(old){
+    // 先摘掉回调再关：否则旧连接的 onerror 会迟到，把刚建好的新连接也关掉
+    old.onopen = old.onmessage = old.onerror = null;
+    try{ old.close(); }catch(_){}
+  }
 }
 
 function connectStream(){

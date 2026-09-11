@@ -98,23 +98,39 @@ class TraceCache:
         key = str(path)
         with self._lock:
             st = self._st.get(key)
-            try:
-                size = path.stat().st_size
-            except OSError:
-                raise FileNotFoundError(path.name)
             if st is None:
-                st = {"offset": 0, "buf": "", "size": -1,
-                      "events": [], "meta": {}, "summary": {}}
+                st = self._fresh()
                 self._st[key] = st
-            elif size < st["size"]:                  # 同名文件被新的一局覆盖
-                st.update(offset=0, buf="", size=-1, events=[], meta={}, summary={})
-            if size != st["size"]:
+            # 最多重来一次：同名文件可能刚被新的一局覆盖（截断重写）
+            for _ in range(2):
+                try:
+                    size = path.stat().st_size
+                except OSError:
+                    raise FileNotFoundError(path.name)
+                if size < st["size"]:            # 变小 = 被截断，从头来
+                    st = self._fresh()
+                    self._st[key] = st
+                if size == st["size"]:
+                    break
+                started_at = st["offset"]
                 with path.open("r", encoding="utf-8", errors="replace", newline="") as fh:
+                    if started_at:
+                        # 不是从头读：先核对文件头（meta 那一行）还是不是原来那条。
+                        # 同名文件被新的一局覆盖时它一定会变——这是唯一可靠的判据：
+                        # 新一局可能一上来就写得比旧文件长，"变小"那一瞬间根本看不到。
+                        if fh.readline() != st["head"]:
+                            st = self._fresh()
+                            self._st[key] = st
+                            continue
                     fh.seek(st["offset"])
                     chunk = fh.read()
                     st["offset"] = fh.tell()
-                lines = (st["buf"] + chunk).split("\n")
+                text = st["buf"] + chunk
+                lines = text.split("\n")
                 st["buf"] = lines.pop()          # 末段可能只写了一半，留到下次
+                if started_at == 0 and lines:
+                    st["head"] = lines[0]        # 记住第一行原文，供下次核对
+                restarted = False
                 for line in lines:
                     line = line.strip()
                     if not line:
@@ -125,15 +141,35 @@ class TraceCache:
                         continue
                     kind = obj.get("kind")
                     if kind == "meta":
+                        if started_at > 0:       # 从中间又读到文件头 = 新的一局
+                            restarted = True
+                            break
                         st["meta"] = obj
-                    elif kind == "summary":
+                        continue
+                    if kind == "summary":
                         st["summary"] = obj
-                    else:
-                        st["events"].append(obj)
+                        continue
+                    seq = obj.get("seq")
+                    if isinstance(seq, int):
+                        if seq <= st["max_seq"]:  # 序号倒退 = 文件被重写且已经长过旧长度
+                            restarted = True
+                            break
+                        st["max_seq"] = seq
+                    st["events"].append(obj)
+                if restarted:
+                    st = self._fresh()
+                    self._st[key] = st
+                    continue
                 st["size"] = size
+                break
             events = st["events"]
             return {"meta": st["meta"], "summary": st["summary"],
                     "events": events[since:], "total": len(events)}
+
+    @staticmethod
+    def _fresh() -> dict:
+        return {"offset": 0, "buf": "", "size": -1, "max_seq": -1, "head": "",
+                "events": [], "meta": {}, "summary": {}}
 
 
 TRACES = TraceCache()
