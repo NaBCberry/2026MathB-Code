@@ -38,7 +38,8 @@
   .col{display:flex;flex-direction:column;gap:16px;min-width:0}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
   .panel>h2{font-size:13px;margin:0;padding:9px 12px;border-bottom:1px solid var(--line);
-            background:#fafbfc;display:flex;align-items:center;gap:10px}
+            background:#fafbfc;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .panel>h2 .ttl{white-space:nowrap}
   .panel>h2 .grow{flex:1}
   .panel .body{padding:12px}
   canvas{display:block;width:100%;height:340px;background:#fff;cursor:grab;touch-action:none}
@@ -154,11 +155,14 @@
   <div class="row">
     <div class="col">
       <div class="panel">
-        <h2>圆形地图 · 轨迹与清除点
+        <h2><span class="ttl">圆形地图 · 轨迹与清除点</span>
           <span class="grow"></span>
           <label class="ck"><input type="checkbox" id="ckTruth" checked> 真值</label>
           <label class="ck"><input type="checkbox" id="ckGuide" checked> 测站/覆盖</label>
           <label class="ck"><input type="checkbox" id="ckEst" checked> 定位结果</label>
+          <label class="ck"><input type="checkbox" id="ckSector" checked> 示向度扇形</label>
+          <label class="ck"><input type="checkbox" id="ckRegion" checked> 交会区域</label>
+          <select id="ckChan" title="只看某个频道"><option value="">全部频道</option></select>
         </h2>
         <canvas id="map"></canvas>
         <div class="legend">
@@ -170,6 +174,8 @@
           <span><i style="background:#dc2626"></i>未发现</span>
           <span><i style="background:#7c3aed"></i>定位结果(圆=保证误差界)</span>
           <span><i style="background:#dc2626;border-radius:0"></i>真值(仅离线可见)</span>
+          <span><i style="background:rgba(37,99,235,.45)"></i>示向度扇形(±1°)∩可测范围</span>
+          <span><i style="background:rgba(124,58,237,.6)"></i>交会定位区域</span>
           <span class="muted">滚轮缩放 / 拖动平移 / 双击复位</span>
         </div>
       </div>
@@ -332,6 +338,134 @@ function renderCards(){
 }
 
 /* ---------------------------------------------------------------- 地图 */
+/* 平面几何：与 robot.py 同一个套路（楔形求交 → 交会定位区域），纯前端重算，不动策略代码。
+   注意：这里用"外接多边形"近似圆盘，所以画出来的区域比 robot.py 里的保守区域略大，
+   视觉上无差别（1500 m 处误差约 1.8 m）。 */
+const GEO = {};                      // ch -> {n, sectors:[poly...], region:poly|null}
+
+function _cross(a, b){ return a[0]*b[1] - a[1]*b[0]; }
+
+function clipHalf(poly, p0, p1){
+  if(!poly.length) return poly;
+  const d = [p1[0]-p0[0], p1[1]-p0[1]], out = [];
+  for(let i=0;i<poly.length;i++){
+    const a = poly[i], b = poly[(i+1)%poly.length];
+    const fa = _cross(d, [a[0]-p0[0], a[1]-p0[1]]);
+    const fb = _cross(d, [b[0]-p0[0], b[1]-p0[1]]);
+    if(fa >= -1e-12) out.push(a);
+    if((fa > 1e-12 && fb < -1e-12) || (fa < -1e-12 && fb > 1e-12)){
+      const t = fa/(fa-fb);
+      out.push([a[0]+t*(b[0]-a[0]), a[1]+t*(b[1]-a[1])]);
+    }
+  }
+  return out;
+}
+
+function clipWedge(poly, sx, sy, phi, half){
+  const a1 = (phi-(half===undefined?1:half))*Math.PI/180;
+  const a2 = (phi+(half===undefined?1:half))*Math.PI/180;
+  const u1 = [Math.cos(a1), Math.sin(a1)], u2 = [Math.cos(a2), Math.sin(a2)];
+  return clipHalf(clipHalf(poly, [sx,sy], [sx+u1[0], sy+u1[1]]),
+                  [sx,sy], [sx-u2[0], sy-u2[1]]);
+}
+
+function arenaPoly(n){
+  n = n || 72;
+  const R = 1800/Math.cos(Math.PI/n), out = [];
+  for(let i=0;i<n;i++){ const a = 2*Math.PI*i/n; out.push([R*Math.cos(a), R*Math.sin(a)]); }
+  return out;
+}
+
+function clipDisc(poly, cx, cy, r, n){
+  n = n || 64;
+  const R = r/Math.cos(Math.PI/n);
+  let p = poly;
+  for(let i=0;i<n && p.length;i++){
+    const a1 = 2*Math.PI*i/n, a2 = 2*Math.PI*(i+1)/n;
+    p = clipHalf(p, [cx+R*Math.cos(a1), cy+R*Math.sin(a1)],
+                    [cx+R*Math.cos(a2), cy+R*Math.sin(a2)]);
+  }
+  return p;
+}
+
+/* 某频道的一次示向度 → "该频道源可能在的地方"：±1° 楔形 ∩ 目标圆域 ∩ 到该测站 ≤1500 m */
+function sectorPoly(b){
+  let p = clipWedge(arenaPoly(), b.x, b.y, b.svd);
+  if(!p.length) return [];
+  return clipDisc(p, b.x, b.y, 1500);
+}
+
+/* 把该频道所有示向度依次求交 —— 就是问题1 里的多边形定位区域 */
+function regionPoly(bs){
+  let p = arenaPoly();
+  for(const b of bs){
+    p = clipWedge(p, b.x, b.y, b.svd);
+    if(!p.length) return null;
+  }
+  for(const b of bs){
+    p = clipDisc(p, b.x, b.y, 1500);
+    if(!p.length) return null;
+  }
+  return p.length >= 3 ? p : null;
+}
+
+function bearingsOf(ch){
+  return MODEL.rows.filter(e=>e.kind==="measure" && e.ch===ch
+                              && e.result==="direction" && e.svd!=null);
+}
+
+/* 几何带缓存：只有该频道新增了示向度才重算 */
+function geomFor(ch){
+  const bs = bearingsOf(ch);
+  const last = bs.length ? bs[bs.length-1].seq : -1;
+  const c = GEO[ch];
+  if(c && c.n === bs.length && c.last === last) return c;
+  const g = {n: bs.length, last,
+             sectors: bs.map(b=>({poly: sectorPoly(b), x:b.x, y:b.y, svd:b.svd})),
+             region: bs.length >= 2 ? regionPoly(bs) : null};
+  GEO[ch] = g;
+  return g;
+}
+
+function drawSectorsAndRegions(ctx){
+  const sel = $("ckChan") ? $("ckChan").value : "";
+  const wantS = $("ckSector") && $("ckSector").checked;
+  const wantR = $("ckRegion") && $("ckRegion").checked;
+  if(!wantS && !wantR) return;
+  const chs = sel ? [Number(sel)] : CHS;
+  for(const ch of chs){
+    const g = geomFor(ch);
+    const cleared = !!(MODEL.st[ch] && MODEL.st[ch].cleared);
+    if(wantS){
+      for(const s of g.sectors){
+        if(s.poly.length < 3) continue;
+        ctx.beginPath();
+        s.poly.forEach((p,i)=>{ const X=TX(p[0]), Y=TY(p[1]); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
+        ctx.closePath();
+        ctx.fillStyle = cleared ? "rgba(22,163,74,.13)" : "rgba(37,99,235,.13)";
+        ctx.fill();
+        ctx.strokeStyle = cleared ? "rgba(22,163,74,.45)" : "rgba(37,99,235,.45)";
+        ctx.lineWidth = 0.6; ctx.stroke();
+      }
+    }
+    if(wantR && g.region){
+      ctx.beginPath();
+      g.region.forEach((p,i)=>{ const X=TX(p[0]), Y=TY(p[1]); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
+      ctx.closePath();
+      ctx.fillStyle = cleared ? "rgba(22,163,74,.30)" : "rgba(124,58,237,.30)";
+      ctx.fill();
+      ctx.strokeStyle = cleared ? "#16a34a" : "#6d28d9";
+      ctx.lineWidth = 1.6; ctx.stroke();
+      // 交会区域中心点
+      let cx=0, cy=0;
+      g.region.forEach(p=>{ cx+=p[0]; cy+=p[1]; });
+      cx/=g.region.length; cy/=g.region.length;
+      ctx.beginPath(); ctx.arc(TX(cx), TY(cy), 2.6, 0, Math.PI*2);
+      ctx.fillStyle = cleared ? "#16a34a" : "#6d28d9"; ctx.fill();
+    }
+  }
+}
+
 function resizeCanvas(){
   const cv = $("map"), r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio||1;
   cv.width = Math.round(r.width*dpr); cv.height = Math.round(r.height*dpr);
@@ -379,6 +513,8 @@ function renderMap(){
       ctx.fillStyle="#60a5fa"; ctx.fill();
     }
   }
+
+  drawSectorsAndRegions(ctx);                        // 示向度扇形 + 交会定位区域
 
   if($("ckTruth").checked && meta.sources){          // 真值
     for(const s of meta.sources){
@@ -627,7 +763,38 @@ function bind(){
     $(id).onchange = ()=>pushDebug(false);
   });
   document.querySelectorAll(".bpAct").forEach(el=>{ el.onchange = ()=>pushDebug(false); });
-  ["ckTruth","ckGuide","ckEst","onlysig"].forEach(id => $(id).onchange = render);
+  ["ckTruth","ckGuide","ckEst","onlysig","ckSector","ckRegion"].forEach(id => $(id).onchange = render);
+  const chanSel = $("ckChan");
+  if(chanSel){
+    for(const c of CHS){
+      const o = document.createElement("option");
+      o.value = String(c); o.textContent = "频道 " + c;
+      chanSel.appendChild(o);
+    }
+    // 选中某个频道时，自动把地图缩放到它的交会定位区域，否则几十米的区域在全图下只有几像素
+    chanSel.onchange = () => {
+      const v = chanSel.value;
+      const g = v ? geomFor(Number(v)) : null;
+      if(g && g.region && g.region.length >= 3){
+        let minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
+        for(const p of g.region){
+          minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]);
+          miny = Math.min(miny, p[1]); maxy = Math.max(maxy, p[1]);
+        }
+        const r = $("map").getBoundingClientRect();
+        const cx = (minx+maxx)/2, cy = (miny+maxy)/2;
+        const span = Math.max(maxx-minx, maxy-miny, 80) * 3;   // 区域占画面约 1/3
+        view.k = Math.min(Math.min(r.width, r.height) / span, 1.5);
+        view.cx = r.width/2 - cx*view.k;
+        view.cy = r.height/2 + cy*view.k;                      // 注意 y 轴向上
+        view.init = true;
+        renderMap();
+        return;
+      }
+      view.init = false;                                       // 全部频道 / 无区域 → 复位
+      renderMap();
+    };
+  }
 
   const cv = $("map");
   let drag = null;
