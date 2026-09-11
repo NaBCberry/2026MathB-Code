@@ -571,7 +571,15 @@ function bind(){
     $("dbgBreak").checked = false; await pushDebug(false); gateTick();
   };
   $("dbgAbort").onclick = async ()=>{ await api("/api/gate/abort", {method:"POST"}); gateTick(); };
-  $("dbgSave").onclick = async ()=>{ await pushDebug(true); alert("已写入 config.json"); };
+  $("dbgSave").onclick = async ()=>{
+    const c = collectDebug();
+    // 落盘会影响以后每一局（尤其断点开着会让正式测试空等），所以再确认一次
+    if(!confirm("把当前调试设置写入 config.json？\n"
+        + `断点单步：${c.breakpoint.enabled ? "开" : "关"}    每步延迟：${c.delay.enabled ? "开" : "关"}\n`
+        + "写入后新启动的每一局都会沿用这套设置。")) return;
+    await pushDebug(true);
+    alert("已写入 config.json");
+  };
   $("runLive").onclick = async ()=>{
     const rid = $("runId").value.trim();
     if(!rid){ alert("请先填参赛队号"); return; }
