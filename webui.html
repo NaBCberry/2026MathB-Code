@@ -335,6 +335,8 @@ async function loadTrace(name){
   showFileAlgo();
   view.init = false;
   render();
+  // 换了一局就重连数据通道，从"已有的条数"接着收，不会重复也不会漏
+  if($("live").checked) connectStream();
 }
 
 /* 顶部小字：当前这局 trace 是用哪套算法跑的 */
@@ -848,6 +850,12 @@ async function gateTick(){
 function bind(){
   $("sel").onchange = e => { CUR = e.target.value; loadTrace(CUR); };
   $("reload").onclick = () => loadTrace(CUR);
+  // "自动刷新"关掉 = 暂停整条数据通道（不再重画），打开时按当前进度重连
+  $("live").onchange = () => {
+    if($("live").checked){ esFail = 0; connectStream(); }
+    else { closeStream(); if(pollTimer){ clearTimeout(pollTimer); pollTimer = null; }
+           streamOn = false; $("status").textContent = "已暂停自动刷新"; }
+  };
   $("algo").onchange = () => selectAlgo($("algo").value);
   $("algoReset").onclick = () => selectAlgo($("algo").value);
   $("newsample").onclick = async () => {
@@ -956,15 +964,37 @@ function bind(){
   cv.addEventListener("dblclick", ()=>{ view.init=false; renderMap(); });
   window.addEventListener("resize", ()=>{ view.init=false; renderMap(); });
 
-  pollTimer = setTimeout(tick, 300);            // 启动自适应轮询
+  connectStream();                              // 启动实时数据通道（失败自动退回轮询）
 }
 
-/* ------------------------------------------------ 自适应增量轮询
-   运行中/等待放行时 250ms 一轮，空闲 1.2s 一轮；每轮只取"新增的那几条"，
-   页面只把新行插到表头，不整表重画。 */
-let pollTimer = null, pollDelay = 400;
+/* ------------------------------------------------ 实时数据通道
+   首选 SSE 推送（/api/stream）：服务端一有新的动作就推过来，不用轮询去"猜"；
+   推送不可用时退回单请求轮询（/api/poll，闸门+轨迹一次拿全），运行中 120ms 一轮。
+   两条路都只传增量，渲染统一合并到每个动画帧，收到再快也只重画一次。 */
+let pollTimer = null, es = null, esFail = 0, streamOn = false, pollBusy = false;
+let rafPending = false, pendingRows = 0, pendingFull = false;
+
+function scheduleRender(rows, full){
+  pendingRows += rows || 0;
+  pendingFull = pendingFull || !!full;
+  if(rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(flushRender);
+}
+
+function flushRender(){
+  rafPending = false;
+  const rows = pendingRows, full = pendingFull;
+  pendingRows = 0; pendingFull = false;
+  if(!MODEL) return;
+  renderCards();
+  renderMap();
+  if(full) renderTableFull();
+  else if(rows) prependRows(MODEL.rows.slice(-rows));
+}
 
 function applyDelta(t){
+  if(!t) return;
   if(t.total != null && t.total < (DATA.events||[]).length){ loadTrace(CUR); return; }
   const fresh = t.events || [];
   const metaChanged = JSON.stringify(t.meta||{}) !== JSON.stringify(DATA.meta||{});
@@ -976,30 +1006,63 @@ function applyDelta(t){
   if(fresh.length) DATA.events = DATA.events.concat(fresh);
   MODEL.meta = DATA.meta; MODEL.summary = DATA.summary;
   if(metaChanged) showFileAlgo();
-  renderCards();
-  renderMap();
-  if(added) prependRows(MODEL.rows.slice(-added));
-  else if(metaChanged || sumChanged) renderTableFull();
+  // 表格：只要开了"只看有信号/清除"就得整表重画，否则只把新行插到表头
+  const needFull = (added > 0 && $("onlysig").checked) || (added === 0 && (metaChanged || sumChanged));
+  scheduleRender(added, needFull);
+}
+
+function statusLine(d, busy){
+  const chan = streamOn ? "实时推送" : "轮询";
+  if(d && d.error){ $("status").textContent = "错误：" + d.error; return; }
+  $("status").textContent = ((d && d.running) ? "正在运行…" : "") + " · " + chan;
+}
+
+/* 一次数据更新（SSE 与轮询共用）：闸门状态 + 轨迹增量 */
+function onPayload(d, wantTrace){
+  if(d.gate !== undefined || d.running !== undefined) renderGate(d);
+  if(wantTrace !== false) applyDelta(d.trace);
+  pollBusy = !!(d.running || (d.gate && d.gate.pending));
+  statusLine(d, pollBusy);
+}
+
+function closeStream(){
+  if(es){ try{ es.close(); }catch(_){} es = null; }
+  streamOn = false;
+}
+
+function connectStream(){
+  closeStream();
+  if(!CUR || !window.EventSource) { startPolling(200); return; }
+  const url = `/api/stream?name=${encodeURIComponent(CUR)}&since=${(DATA.events||[]).length}`;
+  es = new EventSource(url);
+  es.onopen = () => { esFail = 0; streamOn = true; };
+  es.onmessage = ev => {
+    try{ onPayload(JSON.parse(ev.data), $("live").checked); }catch(_){}
+  };
+  es.onerror = () => {
+    // 连接断了：EventSource 会用原 URL 自动重连（since 是旧的，会重复），
+    // 所以这里主动关掉，用当前进度重开；连两次失败就退回轮询。
+    closeStream();
+    if(++esFail <= 2) setTimeout(connectStream, 300);
+    else startPolling(200);
+  };
+}
+
+function startPolling(delay){
+  closeStream();
+  if(pollTimer) clearTimeout(pollTimer);
+  pollTimer = setTimeout(tick, delay == null ? 150 : delay);
 }
 
 async function tick(){
-  let busy = false;
+  pollTimer = null;
   try{
-    const jobs = [api("/api/gate").catch(()=>null)];
     const want = CUR && $("live").checked;
-    jobs.push(want
-      ? api(`/api/trace?name=${encodeURIComponent(CUR)}&since=${(DATA.events||[]).length}`)
-          .catch(()=>null)
-      : Promise.resolve(null));
-    const [g, t] = await Promise.all(jobs);
-    if(g){
-      renderGate(g);
-      busy = !!(g.running || (g.gate && g.gate.pending));
-      $("status").textContent = g.error ? ("错误：" + g.error) : (g.running ? "正在运行…" : "");
-    }
-    if(t) applyDelta(t);
+    const since = want ? (DATA.events||[]).length : 0;
+    const d = await api(`/api/poll?name=${encodeURIComponent(CUR||"")}&since=${since}`);
+    onPayload(d, want);
   }catch(_){}
-  pollTimer = setTimeout(tick, busy ? 250 : 1200);
+  pollTimer = setTimeout(tick, pollBusy ? 120 : 700);
 }
 
 (async function init(){

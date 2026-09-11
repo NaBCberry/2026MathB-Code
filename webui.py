@@ -144,8 +144,31 @@ def read_trace(name: str, since: int = 0) -> dict:
     path = (STATE["trace_dir"] / name).resolve()
     if path.parent != STATE["trace_dir"].resolve() or not path.exists():
         raise FileNotFoundError(name)
-    out = TRACES.read(path, since)
+    out = TRACES.read(path, max(int(since), 0))
     out.update({"name": name, "running": STATE["running"]})
+    return out
+
+
+def gate_payload() -> dict:
+    gate = STATE["gate"]
+    return {"gate": gate.state() if gate else None,
+            "running": STATE["running"], "error": STATE["error"]}
+
+
+def poll_payload(name: str = "", since: int = 0) -> dict:
+    """把"闸门状态 + 轨迹增量"合成一个响应。
+
+    前端原来是每轮打两个请求（/api/gate + /api/trace），往返延迟翻倍；合成一个
+    请求后同样的网络条件下刷新频率能翻一倍。每次的 payload 很小：没有新动作时，
+    events 是空数组，整个响应通常只有一两百字节。
+    """
+    since = max(int(since), 0)
+    out = gate_payload()
+    if name:
+        try:
+            out["trace"] = read_trace(name, since)
+        except FileNotFoundError:
+            out["trace"] = None
     return out
 
 
@@ -212,6 +235,14 @@ def problem_of(body: dict) -> int:
     return 4 if value == 4 else 3
 
 
+def _int_arg(query: dict, key: str, default: int = 0) -> int:
+    """取查询参数里的整数（非法值当默认值）。"""
+    try:
+        return int((query.get(key) or [str(default)])[0])
+    except (TypeError, ValueError):
+        return default
+
+
 def save_debug_config(cfg: dict | None, path: Path = CONFIG_PATH) -> None:
     """把调试配置写回 config.json（其余字段原样保留）。"""
     if not cfg:
@@ -230,6 +261,7 @@ def save_debug_config(cfg: dict | None, path: Path = CONFIG_PATH) -> None:
 # ------------------------------------------------------------------ HTTP
 class Handler(BaseHTTPRequestHandler):
     server_version = "CUMCM2026B/1.0"
+    disable_nagle_algorithm = True     # SSE 推送要的就是"立刻发出去"
 
     def log_message(self, *_args) -> None:            # 静音访问日志
         pass
@@ -262,21 +294,54 @@ class Handler(BaseHTTPRequestHandler):
         elif u.path == "/api/status":
             self._json({"running": STATE["running"], "error": STATE["error"]})
         elif u.path == "/api/gate":
-            gate = STATE["gate"]
-            self._json({"gate": gate.state() if gate else None,
-                        "running": STATE["running"], "error": STATE["error"]})
+            self._json(gate_payload())
+        elif u.path == "/api/poll":
+            # 一次请求拿全：闸门状态 + 轨迹增量（轮询兜底用，省一半往返）
+            name = (q.get("name") or [""])[0]
+            self._json(poll_payload(name, _int_arg(q, "since")))
+        elif u.path == "/api/stream":
+            # SSE 推送：有变化就推，没变化就静默（心跳每 2 s）
+            name = (q.get("name") or [""])[0]
+            self._stream(name, _int_arg(q, "since"))
         elif u.path == "/api/trace":
             name = (q.get("name") or [""])[0]
             try:
-                since = int((q.get("since") or ["0"])[0])
-            except ValueError:
-                since = 0
-            try:
-                self._json(read_trace(name, max(since, 0)))
+                self._json(read_trace(name, _int_arg(q, "since")))
             except FileNotFoundError:
                 self._send(404, b"not found", "text/plain; charset=utf-8")
         else:
             self._send(404, b"not found", "text/plain; charset=utf-8")
+
+    # ------------------------------------------------------------ SSE 推送
+    STREAM_TICK = 0.05        # 服务端检查文件变化的间隔（20 Hz）
+    STREAM_BEAT = 2.0         # 没有变化时每 2 s 发一次心跳，保持连接
+
+    def _stream(self, name: str, since: int) -> None:
+        """把轨迹增量按 SSE 推给浏览器：页面不再靠轮询"猜"什么时候有数据。"""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store, no-transform")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        try:
+            self.wfile.write(b"retry: 300\n\n")
+            self.wfile.flush()
+            last, beat = "", time.time()
+            while True:
+                payload = poll_payload(name, since)
+                trace = payload.get("trace")
+                if trace:
+                    since = trace["total"]          # 下次只取新增的那几条
+                    payload["since"] = since
+                body = json.dumps(payload, ensure_ascii=False)
+                now = time.time()
+                if body != last or now - beat >= self.STREAM_BEAT:
+                    self.wfile.write(b"data: " + body.encode("utf-8") + b"\n\n")
+                    self.wfile.flush()
+                    last, beat = body, now
+                time.sleep(self.STREAM_TICK)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            return                                   # 页面关了/切走了，正常收尾
 
     def do_POST(self) -> None:                         # noqa: N802
         u = urlparse(self.path)
