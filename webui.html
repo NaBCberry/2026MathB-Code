@@ -130,6 +130,11 @@
     </h2>
     <div class="body dbg">
       <div class="dbgrow">
+        <label>离线题目 <select id="offlineProblem"
+               title="只影响离线案例（生成新案例 / 离线案例两个按钮）；实机运行不受影响">
+          <option value="3">第三题（全向源）</option>
+          <option value="4">第四题（全向+定向）</option>
+        </select></label>
         <label>算法 <select id="algo" title="选择要跑的算法/题目"></select></label>
         <label>参数 <input id="algoParams" placeholder='{"ring_r":1200}' style="width:280px"></label>
         <button id="algoReset">恢复默认参数</button>
@@ -190,6 +195,7 @@
           <span><i style="background:#dc2626"></i>未发现</span>
           <span><i style="background:#7c3aed"></i>定位结果(圆=保证误差界)</span>
           <span><i style="background:#dc2626;border-radius:0"></i>真值(仅离线可见)</span>
+          <span><i style="background:rgba(220,38,38,.12);border-radius:0;border:1px solid rgba(220,38,38,.45)"></i>真值·定向覆盖(180°)</span>
           <span><i style="background:rgba(37,99,235,.45)"></i>示向度扇形(±1°)∩可测范围</span>
           <span><i style="background:rgba(124,58,237,.6)"></i>交会定位区域</span>
           <span class="muted">滚轮缩放 / 拖动平移 / 双击复位</span>
@@ -300,13 +306,19 @@ function algoBody(){
   return {algorithm: $("algo").value, params};
 }
 
+/* 离线题目号（3/4）：只影响离线案例；实机运行的请求里不带这个字段。 */
+function problemPick(){
+  return Number($("offlineProblem").value) === 4 ? 4 : 3;
+}
+
 async function loadList(){
   const list = await api("/api/traces");
   const sel = $("sel"); sel.innerHTML = "";
   for(const t of list){
     const o = document.createElement("option");
     o.value = t.name;
-    o.textContent = `${t.name}  ·  ${t.mode==="mock" ? "离线" : "实机"}  ·  清除 ${t.cleared ?? "-"}`
+    const env = t.mode==="mock" ? `离线·P${t.problem ?? 3}` : "实机";
+    o.textContent = `${t.name}  ·  ${env}  ·  清除 ${t.cleared ?? "-"}`
                   + (t.n_sources ? `/${t.n_sources}` : "");
     sel.appendChild(o);
   }
@@ -330,8 +342,9 @@ function showFileAlgo(){
   const m = (DATA && DATA.meta) || {};
   const ps = m.algorithm_params && Object.keys(m.algorithm_params).length
            ? "  " + JSON.stringify(m.algorithm_params) : "";
+  const env = m.mode === "mock" ? `离线第${m.problem ?? 3}题` : "实机";
   $("filealgo").textContent =
-    m.algorithm_name ? `本局算法：${m.algorithm_name}${ps}` : "";
+    m.algorithm_name ? `本局：${env} · 算法：${m.algorithm_name}${ps}` : "";
 }
 
 function snapshot(st){
@@ -399,6 +412,10 @@ function renderCards(){
     ["移动路程", fmt(T.move_m,0)+" m", `耗时 ${fmt(T.move_s)} s`],
     ["检测次数", T.n_measure ?? 0, `换频道 ${T.n_switch ?? 0} 次`],
     ["清除次数", T.n_clear ?? 0, `其中落空 ${T.n_clear_miss ?? 0} 次`],
+    ["题目环境", meta.mode==="live" ? "实机" : `离线 · 第${meta.problem ?? 3}题`,
+     meta.mode==="live" ? "真值不可见"
+       : (meta.n_directional ? `定向 ${meta.n_directional}/${meta.n_sources} 个`
+                             : `全向源 ${meta.n_sources ?? "?"} 个`)],
     ["本局算法", meta.algorithm_name || "—",
      meta.algorithm_problem ? `${meta.algorithm_problem} · ${meta.algorithm || ""}` : ""],
   ];
@@ -618,6 +635,16 @@ function renderMap(){
 
   if($("ckTruth").checked && meta.sources){          // 真值
     for(const s of meta.sources){
+      if(s.direction != null){                       // 定向源：画出 180° 覆盖方向
+        const r = 22, a0 = (s.direction - 90) * Math.PI / 180,
+              a1 = (s.direction + 90) * Math.PI / 180;
+        ctx.beginPath();
+        ctx.moveTo(TX(s.x), TY(s.y));
+        ctx.arc(TX(s.x), TY(s.y), r, -a1, -a0);      // 画布 y 向下，角度取负
+        ctx.closePath();
+        ctx.fillStyle = "rgba(220,38,38,.12)"; ctx.fill();
+        ctx.strokeStyle = "rgba(220,38,38,.45)"; ctx.lineWidth = 1; ctx.stroke();
+      }
       ctx.beginPath(); ctx.arc(TX(s.x),TY(s.y),5,0,Math.PI*2);
       ctx.strokeStyle="#dc2626"; ctx.lineWidth=2; ctx.stroke();
       ctx.fillStyle="rgba(220,38,38,.15)"; ctx.fill();
@@ -825,10 +852,11 @@ function bind(){
   $("algoReset").onclick = () => selectAlgo($("algo").value);
   $("newsample").onclick = async () => {
     const pick = algoBody(); if(!pick) return;
-    $("status").textContent = "正在生成新案例…";
+    const problem = problemPick();
+    $("status").textContent = `正在生成第${problem}题离线案例…`;
     const r = await api("/api/new?seed="+Math.floor(Math.random()*90000+1),
       {method:"POST", headers:{"Content-Type":"application/json"},
-       body: JSON.stringify(pick)});
+       body: JSON.stringify(Object.assign({problem: problem}, pick))});
     const t0 = Date.now();
     const wait = setInterval(async ()=>{
       const list = await loadList();
@@ -856,7 +884,8 @@ function bind(){
     const rid = $("runId").value.trim();
     if(!rid){ alert("请先填参赛队号"); return; }
     const pick = algoBody(); if(!pick) return;
-    if(!confirm(`接模拟器跑一局：\n算法：${ALGO ? ALGO.name : $("algo").value}\n`
+    if(!confirm(`接模拟器跑一局（实机；"离线题目"选择器对本局不生效）：\n`
+        + `算法：${ALGO ? ALGO.name : $("algo").value}\n`
         + `参数：${JSON.stringify(pick.params)}\n确认开始？`)) return;
     const r = await api("/api/run", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify(Object.assign({mode:"live", robot_id:rid}, pick))});
@@ -864,9 +893,10 @@ function bind(){
   };
   $("runMock").onclick = async ()=>{
     const pick = algoBody(); if(!pick) return;
+    const problem = problemPick();
     const r = await api("/api/new?seed="+Math.floor(Math.random()*90000+1),
       {method:"POST", headers:{"Content-Type":"application/json"},
-       body: JSON.stringify(pick)});
+       body: JSON.stringify(Object.assign({problem: problem}, pick))});
     CUR = r.name;
     setTimeout(async ()=>{ await loadList(); $("sel").value = CUR; await loadTrace(CUR); }, 600);
   };

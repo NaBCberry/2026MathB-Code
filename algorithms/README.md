@@ -114,6 +114,21 @@ def build(sim, params=None, *, verbose=False):
 按上面的步骤新建一个算法模块（例如 `algorithms/p4_directional.py`），网页控制台与
 `--algorithm` 都能直接切换过去，不必改动 `robot.py`。
 
+**离线第四题环境已经就绪**，写算法时不用等模拟器：
+
+```bash
+# 第四题环境自测（全向 + 定向混合）
+python robot.py --robot-id demo --dry-run --cases 20 --problem 4 --algorithm <你的id>
+
+# 网页里：调试控制台最左"离线题目"选"第四题"，再点"生成新案例/离线案例"
+python webui.py --serve-only
+```
+
+用第三题那套（`p3-baseline`）跑第四题环境时，清除比例只有 **60%~80%**——因为它的
+停止判据依赖"处处无信号 ⇒ 该频道不存在"，而定向源的 `no_signal` 可能只是"不在覆盖
+角度内"，这条推理在第四题不成立（见上面的改造点 2）。`--dry-run --problem 4`
+正好可以量化这个差距，当作对照基线。
+
 ## 写算法时必须遵守的三条
 
 1. **动作只走注入的 `sim`**：`self.sim.measure(x, y, ch)` / `self.sim.clear(x, y, ch)`。

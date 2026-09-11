@@ -4,7 +4,7 @@
 
 | 文件 | 是什么 | 还能用吗 |
 | --- | --- | --- |
-| `mock_arena.py` | 本地离线模拟器：按题目规则复刻电磁环境，能读到真值（干扰源个数/位置/接收半径/定向方向），用来在没有模拟器、没有网络时自测"清除比例"与"平均定位清除时间" | **能**。`python robot.py --robot-id demo --dry-run --cases 20` 和网页的"离线案例"都通过 `archived.mock_arena` 调它 |
+| `mock_arena.py` | 本地离线模拟器：按题目规则复刻电磁环境，**第三题（全全向源）与第四题（全向+定向混合）都能模拟**，能读到真值（干扰源个数/位置/接收半径/定向方向），用来在没有模拟器、没有网络时自测"清除比例"与"平均定位清除时间" | **能**。`python robot.py --robot-id demo --dry-run --cases 20 [--problem 4]` 和网页的"离线案例"（可选第三题/第四题）都通过 `archived.mock_arena` 调它 |
 | `probe_simulator.py` | 模拟器连通性探测脚本（登录/开始测试/接口是否就绪），只读、可选 `--enter` | 能，但需要模拟器在跑。要跑就 `python archived/probe_simulator.py --robot-id <队号>` |
 | `robot_v1.py` | 重构前的 `robot.py` 快照：那时算法本体（`InterferenceHunter`）还跟命令行入口挤在同一个文件里 | 只是留档/回滚参考，**不要直接跑**；算法本体已移到 `algorithms/p3_baseline.py`，入口是本目录上一级的 `robot.py` |
 
@@ -20,3 +20,19 @@
   但**别**在正式测试路径里依赖它——正式测试只该走 `sim_client` + `algorithms`。
 - 归档文件不会跟着算法一起更新。改了 `algorithms/p3_baseline.py` 之后，
   `robot_v1.py` 里还是老代码，那是它的用途（对照/回滚），不是 bug。
+
+## 离线模拟器支持的两套题目
+
+```python
+MockArena(seed=1, problem=3)   # 全部是全向干扰源（问题3）
+MockArena(seed=1, problem=4)   # 全向 + 定向混合（问题4），定向个数与方向未知
+```
+
+- `problem=4` 时每个源独立 50% 定向、再夹到 [1, n-1]，保证"两类都至少有一个"，
+  与题面"既有全向干扰源，又有定向干扰源，总数 10~16"一致；想指定个数就传
+  `n_directional=`。
+- 定向源的覆盖角度是**定向方向两侧各 90°（含）**：判定用的是"源→检测点"的方位
+  与定向方向的夹角，不超过 90° 才收得到；覆盖外返回 `no_signal`。
+- 清除不受定向朝向限制（20 m 内 `clear` 必成功），与题面一致。
+- `problem=3` 的随机数序列与旧版完全一致，所以老 seed 仍然生成同一个案例
+  （已用 seed 1~40 逐字段核对）。

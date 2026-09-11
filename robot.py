@@ -58,6 +58,7 @@ def run_dry_run(args) -> int:
     """用本地模拟环境自测策略，统计"清除比例"与"平均定位清除时间"。
 
     离线模拟器已归档在 `archived/mock_arena.py`（它只用于自测，正式测试不经过它）。
+    `--problem 4` 会生成"全向 + 定向混合"的第四问题目环境。
     """
     try:
         from archived.mock_arena import MockArena
@@ -71,13 +72,13 @@ def run_dry_run(args) -> int:
     except (KeyError, ValueError) as exc:
         print(f"[错误] {exc}")
         return 2
-    print(f"算法：{spec.name}（{spec.id} · {spec.problem}）"
+    print(f"离线题目：第{args.problem}题    算法：{spec.name}（{spec.id} · {spec.problem}）"
           f"    参数覆盖：{params if params else '（用默认值）'}")
 
     rows = []
     for case in range(args.cases):
         seed = args.seed + case
-        arena = MockArena(seed=seed)
+        arena = MockArena(seed=seed, problem=args.problem)
         hunter = algorithms.build_algorithm(algorithm_id, arena, params,
                                             verbose=not args.quiet)
         stats = hunter.run()
@@ -112,6 +113,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dry-run", action="store_true", help="离线自测，不连接模拟器")
     p.add_argument("--cases", type=int, default=10, help="离线自测的案例数")
     p.add_argument("--seed", type=int, default=1, help="离线自测的随机种子起点")
+    p.add_argument("--problem", type=int, default=3, choices=(3, 4),
+                   help="离线自测的题目：3 = 全全向源（默认），4 = 全向 + 定向混合")
     p.add_argument("--quiet", action="store_true", help="不逐条打印请求/响应")
     p.add_argument("--trace", default="",
                    help="可选：把本次行为轨迹写入该 JSONL（供 webui.py 可视化）")

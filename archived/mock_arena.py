@@ -8,14 +8,22 @@
 定向方向），因此可以在没有模拟器、没有网络的时候检验策略的
 "被清除干扰源个数的比例"和"平均定位清除时间"。
 
+第三问 / 第四问
+---------------
+``MockArena(seed=..., problem=3)`` 全为全向源（问题3）；
+``MockArena(seed=..., problem=4)`` 是全向 + 定向混合（问题4），定向源个数与方向未知，
+两类的数目随机但都至少有一个，与题面"既有全向干扰源，又有定向干扰源，总数 10~16"一致。
+两种模式下除了"有没有定向源"之外，规则完全相同。
+
 已实现的规则
 ------------
 - 10~16 个干扰源，频道从 1..20 中互不相同；位置在半径 1800 m 圆域内均匀分布。
 - 有效接收半径 1000~1500 m，各源不同，且不对外暴露。
 - 示向度误差：**同一地点固定**（同坐标重复检测读数不变），取值在 [-1°, 1°]。
 - 示向度按 [0,360) 归一化；距离 ≤5 m 且在覆盖角度内返回 near 且不给示向度。
-- 定向源：有效覆盖角度为定向方向两侧各 90°（含），覆盖外返回 no_signal。
-- 清除：20 m 内必成功；同一源只清除一次；/clear 不切换测向机频道。
+- 定向源：有效覆盖角度为定向方向两侧各 90°（含）——即"源指向检测点的方位"与定向
+  方向的夹角 ≤90° 才收得到；覆盖外返回 no_signal。
+- 清除：20 m 内必成功，**不受定向朝向限制**；同一源只清除一次；/clear 不切换频道。
 - 虚拟时间：移动距离/5 + 换频道 1 s（仅 /measure）+ 检测 5 s / 清除 3 s 或 5 s。
 """
 
@@ -52,22 +60,58 @@ class Source:
 class MockArena:
     """本地模拟器。用法与 SimulatorClient 相同。"""
 
-    def __init__(self, seed: int | None = None, *, n_sources: int | None = None,
-                 directional_fraction: float = 0.0, verbose: bool = False):
+    def __init__(self, seed: int | None = None, *, problem: int = 3,
+                 n_sources: int | None = None, n_directional: int | None = None,
+                 directional_fraction: float | None = None, verbose: bool = False):
+        """建一个离线案例。
+
+        problem=3：全部是全向干扰源（问题3）。
+        problem=4：全向 + 定向混合（问题4），定向个数随机且两类都至少有一个；
+                   传 `n_directional` 可以指定定向源个数。
+        `directional_fraction` 是"每个源独立按比例定向"的旧接口，给了它就按它来
+        （早期用 0<fraction<1 做过实验，留着免得脚本报错）。
+        """
+        if problem not in (3, 4):
+            raise ValueError("problem 只能是 3 或 4")
         self.verbose = verbose
         rng = random.Random(seed)
         self.seed = seed
+        self.problem = problem
         n = n_sources if n_sources is not None else rng.randint(10, 16)
         channels = rng.sample(range(1, 21), n)
         self.sources: list[Source] = []
+        rolls: list[float] = []
         for ch in channels:
             r = ARENA_R * math.sqrt(rng.random())
             th = rng.uniform(0.0, 2 * math.pi)
             radius = rng.uniform(R_MIN, R_MAX)
-            directional = rng.random() < directional_fraction
-            direction = rng.uniform(0.0, 360.0) if directional else None
+            # 每次抽的随机数次序与旧版一致（random → uniform → uniform → random），
+            # 这样 problem=3 的老 seed 仍然生成同一个案例。
+            rolls.append(rng.random())
             self.sources.append(Source(ch, r * math.cos(th), r * math.sin(th),
-                                       radius, direction))
+                                       radius, None))
+
+        # 决定哪些源是定向的（在抽完位置之后决定，才不会打乱随机数序列）
+        if directional_fraction is not None:                # 旧接口：逐源 Bernoulli
+            flags = [v < directional_fraction for v in rolls]
+        else:
+            if n_directional is not None:
+                n_dir = n_directional
+            elif problem == 4:
+                # 每个源独立 50% 定向（复用上面抽到的随机数，不额外消耗随机数序列），
+                # 再夹到 [1, n-1]：题面要求两类都至少有 1 个
+                n_dir = sum(1 for v in rolls if v < 0.5)
+                n_dir = max(1, min(n_dir, n - 1))
+            else:
+                n_dir = 0
+            n_dir = max(0, min(n_dir, n))
+            picked = set(sorted(range(n), key=lambda i: rolls[i], reverse=True)[:n_dir])
+            flags = [i in picked for i in range(n)]
+
+        for src, directional in zip(self.sources, flags):
+            if directional:
+                src.direction = rng.uniform(0.0, 360.0)
+
         self.n_sources = n
         self.n_directional = sum(1 for s in self.sources if s.direction is not None)
 
@@ -92,10 +136,15 @@ class MockArena:
 
     @staticmethod
     def _in_coverage(src: Source, x: float, y: float) -> bool:
+        """检测点 (x, y) 是否落在源的覆盖角度内。
+
+        全向源恒为真；定向源要求"源指向检测点"的方位与定向方向的夹角 ≤ 90°。
+        （注意方向：比的是 **源→检测点** 的方位，不是检测点→源。）
+        """
         if src.direction is None:
             return True
-        bearing = math.degrees(math.atan2(src.y - y, src.x - x)) % 360.0
-        diff = abs((bearing - src.direction + 180.0) % 360.0 - 180.0)
+        to_point = math.degrees(math.atan2(y - src.y, x - src.x)) % 360.0
+        diff = abs((to_point - src.direction + 180.0) % 360.0 - 180.0)
         return diff <= 90.0 + 1e-9
 
     def _move_cost(self, x: float, y: float) -> float:

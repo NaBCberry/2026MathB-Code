@@ -75,7 +75,9 @@ def list_traces() -> list[dict]:
             "size": f.stat().st_size,
             "mode": meta.get("mode", "?"),
             "seed": meta.get("seed"),
+            "problem": meta.get("problem", 3 if meta.get("mode") == "mock" else None),
             "n_sources": meta.get("n_sources"),
+            "n_directional": meta.get("n_directional"),
             "cleared": summary.get("stats", {}).get("cleared"),
             "virtual_total_s": totals.get("virtual_total_s"),
         })
@@ -149,7 +151,8 @@ def read_trace(name: str, since: int = 0) -> dict:
 
 def run_blocking(mode: str, name: str, *, seed: int | None = None, robot_id: str = "",
                  url: str = "http://127.0.0.1:2026", log_dir: str = "logs",
-                 algorithm: str = "", params: dict | None = None) -> dict | None:
+                 algorithm: str = "", params: dict | None = None,
+                 problem: int = 3) -> dict | None:
     """同步跑一局并登记状态（在后台线程里调用）。"""
     with STATE["lock"]:
         STATE["running"] = name
@@ -158,7 +161,7 @@ def run_blocking(mode: str, name: str, *, seed: int | None = None, robot_id: str
         return trace_client.run_session(
             mode=mode, out=STATE["trace_dir"] / name, seed=seed,
             robot_id=robot_id, url=url, log_dir=log_dir, gate=STATE["gate"],
-            algorithm=algorithm, params=params)
+            algorithm=algorithm, params=params, problem=problem)
     except Exception as exc:                          # noqa: BLE001
         STATE["error"] = f"{type(exc).__name__}: {exc}"
         print(f"[webui] {mode} 运行结束：", exc)
@@ -170,15 +173,22 @@ def run_blocking(mode: str, name: str, *, seed: int | None = None, robot_id: str
 
 def start_run(mode: str, *, seed: int | None = None, robot_id: str = "",
               url: str = "http://127.0.0.1:2026", log_dir: str = "logs",
-              algorithm: str = "", params: dict | None = None) -> str:
-    """后台跑一局（离线 mock 或实机），返回 trace 文件名。"""
-    name = f"mock-seed{seed}.jsonl" if mode == "mock" else "live.jsonl"
+              algorithm: str = "", params: dict | None = None,
+              problem: int = 3) -> str:
+    """后台跑一局（离线 mock 或实机），返回 trace 文件名。
+
+    `problem` 只影响离线 mock（3 = 全全向源，4 = 全向 + 定向混合）；实机一局仍然写
+    `live.jsonl`，参数一个都不多传。
+    """
+    name = (f"mock-p{4 if problem == 4 else 3}-seed{seed}.jsonl" if mode == "mock"
+            else "live.jsonl")
     with STATE["lock"]:
         if STATE["running"]:
             return STATE["running"]
     threading.Thread(target=lambda: run_blocking(mode, name, seed=seed, robot_id=robot_id,
                                                  url=url, log_dir=log_dir,
-                                                 algorithm=algorithm, params=params),
+                                                 algorithm=algorithm, params=params,
+                                                 problem=problem),
                      daemon=True).start()
     return name
 
@@ -191,6 +201,15 @@ def algo_payload() -> dict:
     except Exception as exc:                      # noqa: BLE001 —— 坏插件不该拖垮网页
         return {"default": algorithms.DEFAULT_ID, "algorithms": [], "error": str(exc)}
     return {"default": algorithms.DEFAULT_ID, "algorithms": specs, "errors": errors}
+
+
+def problem_of(body: dict) -> int:
+    """取请求里的"离线题目"号：只认 4，其余（含缺省）都当 3。"""
+    try:
+        value = int(body.get("problem", 3))
+    except (TypeError, ValueError):
+        return 3
+    return 4 if value == 4 else 3
 
 
 def save_debug_config(cfg: dict | None, path: Path = CONFIG_PATH) -> None:
@@ -271,22 +290,27 @@ class Handler(BaseHTTPRequestHandler):
                 seed = 0
             if seed <= 0:
                 seed = int(time.time()) % 100000
+            problem = problem_of(body)
             self._json({"name": start_run("mock", seed=seed,
                                           algorithm=body.get("algorithm", ""),
-                                          params=body.get("params") or None),
-                        "seed": seed})
+                                          params=body.get("params") or None,
+                                          problem=problem),
+                        "seed": seed, "problem": problem})
         elif u.path == "/api/run":
             mode = body.get("mode", "mock")
             if mode == "live" and not body.get("robot_id"):
                 self._send(400, "缺少 robot_id".encode("utf-8"),
                            "text/plain; charset=utf-8")
                 return
+            # 实机（live）一个参数都不多传：连模拟器的行为与以前完全一致
+            extra = {"problem": problem_of(body)} if mode == "mock" else {}
             name = start_run(mode, seed=body.get("seed"),
                              robot_id=body.get("robot_id", ""),
                              url=body.get("url", "http://127.0.0.1:2026"),
                              log_dir=STATE.get("log_dir", "logs"),
                              algorithm=body.get("algorithm", ""),
-                             params=body.get("params") or None)
+                             params=body.get("params") or None,
+                             **extra)
             self._json({"name": name})
         elif u.path == "/api/gate/step":
             gate = STATE["gate"]
@@ -335,6 +359,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--serve-only", action="store_true", help="只提供已有 trace 的可视化")
     p.add_argument("--cases", type=int, default=3, help="--demo 生成几个案例")
     p.add_argument("--seed", type=int, default=1, help="--demo 的起始随机种子")
+    p.add_argument("--problem", type=int, default=3, choices=(3, 4),
+                   help="离线案例的题目：3 = 全全向源（默认），4 = 全向 + 定向混合")
     p.add_argument("--robot-id", default="", help="--run 时必填")
     p.add_argument("--url", default="http://127.0.0.1:2026")
     p.add_argument("--log-dir", default="logs")
@@ -386,9 +412,10 @@ def main() -> int:
             time.sleep(0.8)                     # 先把网页放出来，断点才有地方点
             for i in range(args.cases):
                 seed = args.seed + i
-                print(f"[demo {i + 1}/{args.cases}] 生成 mock-seed{seed}.jsonl ...")
-                stats = run_blocking("mock", f"mock-seed{seed}.jsonl", seed=seed,
-                                     algorithm=cli_algo, params=cli_params)
+                name = f"mock-p{args.problem}-seed{seed}.jsonl"
+                print(f"[demo {i + 1}/{args.cases}] 生成 {name} ...")
+                stats = run_blocking("mock", name, seed=seed, algorithm=cli_algo,
+                                     params=cli_params, problem=args.problem)
                 if stats:
                     print(f"   清除 {stats['cleared']} 个，"
                           f"平均定位清除时间 {stats['平均定位清除时间']:.1f} s")
@@ -404,7 +431,8 @@ def main() -> int:
 
     if not list_traces():
         print("trace 目录为空，自动生成一个离线案例 ...")
-        start_run("mock", seed=1, algorithm=cli_algo, params=cli_params)
+        start_run("mock", seed=1, algorithm=cli_algo, params=cli_params,
+                  problem=args.problem)
 
     try:
         server = Server(("127.0.0.1", args.port), Handler)

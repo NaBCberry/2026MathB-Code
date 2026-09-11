@@ -220,13 +220,17 @@ _final_state = final_state          # 兼容旧名字
 
 def run_session(*, mode: str, out: str | Path, seed: int | None = None,
                 robot_id: str = "", url: str = "", log_dir: str | None = None,
-                n_sources: int | None = None,
-                directional_fraction: float = 0.0, gate=None,
+                problem: int = 3, n_sources: int | None = None,
+                n_directional: int | None = None,
+                directional_fraction: float | None = None, gate=None,
                 algorithm: str = "", params: dict | None = None) -> dict:
     """跑一局（离线 mock 或真实模拟器），产出 trace 文件，返回统计字典。
 
     `algorithm` / `params` 选算法与参数（见 algorithms/README.md）；缺省用注册表
     里的默认算法。选了什么会写进 trace 的 meta，回放时一眼能看出来。
+
+    `problem` 只对离线 `mode="mock"` 有意义：3 = 全全向源（默认），4 = 全向 + 定向
+    混合。连接真实模拟器时不传这个参数，行为与以前完全一样。
     """
     import algorithms
 
@@ -241,10 +245,11 @@ def run_session(*, mode: str, out: str | Path, seed: int | None = None,
 
     if mode == "mock":
         from archived.mock_arena import MockArena      # 离线模拟器已归档
-        arena = MockArena(seed=seed, n_sources=n_sources,
+        arena = MockArena(seed=seed, problem=problem, n_sources=n_sources,
+                          n_directional=n_directional,
                           directional_fraction=directional_fraction)
         meta = {
-            "mode": "mock", "seed": seed,
+            "mode": "mock", "problem": arena.problem, "seed": seed,
             "n_sources": arena.n_sources,
             "n_directional": arena.n_directional,
             "sources": [{"ch": s.channel, "x": s.x, "y": s.y,
