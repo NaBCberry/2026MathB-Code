@@ -27,6 +27,10 @@ python robot.py --robot-id demo --dry-run --cases 20 --quiet
 # 离线自测第四题环境（全向 + 定向混合；第三题环境是 --problem 3，默认）
 python robot.py --robot-id demo --dry-run --cases 20 --problem 4 --quiet
 
+# 第四题导航算法：25 站包围式排查 + 沿示向度逼近 + /clear 铺清兜底
+python robot.py --robot-id demo --dry-run --cases 100 --problem 4 \
+       --algorithm p4-directional --quiet        # 离线 100 例：清除比例 99.83%
+
 # 正式/演练测试：先启动模拟器并登录，等界面提示"机器狗接口已就绪"后再运行
 python robot.py --robot-id <参赛队号>
 
@@ -75,6 +79,7 @@ python robot.py --robot-id demo --dry-run --cases 20 \
 | id | 名称 | 题目 | 实现位置 |
 | --- | --- | --- | --- |
 | `p3-baseline` | 第三题初版算法 | 问题3 | `algorithms/p3_baseline.py: InterferenceHunter` |
+| `p4-directional` | 第四题导航算法 | 问题4 | `algorithms/p4_directional.py: P4Hunter` |
 
 写新算法只需守三条：动作全部走注入的 `sim`（录制/实时刷新/延迟/断点都挂在那一层）、
 严格串行、别在算法里 `time.sleep`（要放慢节奏用调试闸门）。
