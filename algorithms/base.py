@@ -32,7 +32,7 @@ class AlgorithmSpec:
     summary: str                 # 一句话概括
     description: str             # 详细说明（网页上展开显示）
     params: dict = field(default_factory=dict)   # 可调参数默认值（JSON 可序列化）
-    entry: str = ""              # 实现位置提示，例如 "robot.py: InterferenceHunter"
+    entry: str = ""              # 实现位置提示，例如 "algorithms/p3_baseline.py: InterferenceHunter"
 
     def to_dict(self) -> dict:
         return asdict(self)

@@ -240,7 +240,7 @@ def run_session(*, mode: str, out: str | Path, seed: int | None = None,
         return algorithms.build_algorithm(algorithm_id, client, params)
 
     if mode == "mock":
-        from mock_arena import MockArena
+        from archived.mock_arena import MockArena      # 离线模拟器已归档
         arena = MockArena(seed=seed, n_sources=n_sources,
                           directional_fraction=directional_fraction)
         meta = {

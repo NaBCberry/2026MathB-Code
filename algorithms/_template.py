@@ -23,13 +23,13 @@ SPEC = AlgorithmSpec(
 
 
 # --------------------------------------------------------------------------
-# 用法一：复用 robot.py 里现成的策略，只改参数（最省事）
+# 用法一：复用 p3_baseline.py 里现成的策略，只改参数（最省事）
 # --------------------------------------------------------------------------
 # def build(sim, params=None, *, verbose=False):
-#     import robot
+#     from . import p3_baseline
 #     if params and "some_param" in params:
-#         robot.SOME_CONST = params["some_param"]
-#     return robot.InterferenceHunter(sim, verbose=verbose)
+#         p3_baseline.SOME_CONST = params["some_param"]
+#     return p3_baseline.InterferenceHunter(sim, verbose=verbose)
 
 
 # --------------------------------------------------------------------------

@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""第三题初版算法 —— 机器狗对全向干扰源的自动搜索、定位与清除策略。
+"""问题3：机器狗对全向干扰源的自动搜索、定位与清除策略。
 
-实现就在本文件（``algorithms/p3_baseline.py``）。命令行入口仍是根目录的
-``robot.py``：它只负责解析参数、套上轨迹录制与调试外壳，然后调用本文件里的
-``InterferenceHunter``；网页可视化见 ``webui.py``；算法清单与说明见
-``algorithms/README.md``。
+用法::
+
+    python robot.py --robot-id <参赛队号>                    # 跑模拟器（演练/正式测试）
+    python robot.py --robot-id demo --dry-run --cases 20     # 离线自测，不联网
 
 策略（四步）
 ------------
@@ -32,17 +32,18 @@
    挑距离最近的一件去做，执行后立刻按新信息重排——探测、定位、清除共用同一条
    巡访回路，而不是分三段各跑一趟。
 
-对问题4 的扩展点见 ``algorithms/README.md`` 末尾的"问题4 改造点"。
+对问题4 的扩展点见文件末尾注释。
 """
 
 from __future__ import annotations
 
+import argparse
 import math
 import random
 import time
 from dataclasses import dataclass, field
 
-from .base import AlgorithmSpec
+from sim_client import BASE_URL, SimulatorClient
 
 # ------------------------------------------------------------------ 物理常量
 ARENA_R = 1800.0            # 目标区域半径（m）
@@ -652,64 +653,166 @@ class InterferenceHunter:
         }
 
 
-# ================================================================== 算法登记
-SPEC = AlgorithmSpec(
-    id="p3-baseline",
-    name="第三题初版算法",
-    problem="问题3",
-    summary="覆盖式探测 → 交会定位 → 精化逼近 → 滚动巡访清除",
-    description=(
-        "【探测】原点 + 半径 1300 m 上均布 6 点共 7 个测站。该布站最大覆盖半径 936 m，"
-        "小于有效接收半径下限 1000 m，所以“某频道处处无信号 ⇒ 该频道必不存在”——"
-        "这就是“确保全部清除”的停止判据，不依赖猜干扰源总数。\n"
-        "【定位】把各测站 ±1° 示向度楔形求交，再与目标圆域、“被检测到 ⇒ 距该站 ≤1500 m”"
-        "的圆盘求交；所得定位区域的最小外接圆半径 Rc 是**保证性**误差界（真实源必在圆内）。\n"
-        "【精化】Rc > 20 m（清除半径）时，在估计点附近补两个互成 90° 的点。本题是"
-        "“同一地点误差固定”的系统误差，最坏情况定位区域最小的交会角约 90°（随机误差 CEP "
-        "准则下才是文献常引的 110°）；收敛到 Rc ≤ 20 m 后取圆心清除，一次命中可保证。\n"
-        "【巡访】待办池 = {未去的测站} ∪ {待补第二条示向度的频道} ∪ {待清除目标}，"
-        "每一步对当前待办集做一次滚动 TSP 取最近的一个——探测、定位、清除共用同一条回路。\n"
-        "【实测】离线 200 例：清除比例 100%，平均定位清除时间 ≈ 315 s，"
-        "平均每局约 109 次 measure。"
-    ),
-    params={
-        "ring_r": RING_R,            # 探测环半径
-        "good_radius": GOOD_RADIUS,  # 定位区域小到此值就不必再补测
-        "max_refine": MAX_REFINE,    # 单目标精化迭代上限
-    },
-    entry="algorithms/p3_baseline.py: InterferenceHunter",
-)
+# ================================================================== 离线自测
+def _algorithm_choice(args) -> tuple[str, dict]:
+    """解析 --algorithm / --params；缺省用注册表里的默认算法。"""
+    import json as _json
 
-#: 参数名 → 本模块里的模块级常量名。
-#: 想让它可调，先确认 `InterferenceHunter` 确实按那个常量取值。
-PARAM_CONSTANTS = {
-    "ring_r": "RING_R",                  # 探测环半径
-    "ring_k": "RING_K",                  # 环上测站数
-    "good_radius": "GOOD_RADIUS",        # 定位区域小到它就不补测
-    "max_refine": "MAX_REFINE",          # 单目标精化迭代上限
-    "max_fallback": "MAX_FALLBACK",      # 清除失败后的兜底试探次数
-    "real_time_margin": "REAL_TIME_MARGIN",
-}
-_INT_CONSTANTS = ("ring_k", "max_refine", "max_fallback")
+    import algorithms
+
+    algorithm_id = (getattr(args, "algorithm", "") or "").strip() or algorithms.DEFAULT_ID
+    raw = (getattr(args, "params", "") or "").strip()
+    try:
+        params = _json.loads(raw) if raw else {}
+    except _json.JSONDecodeError as exc:
+        raise ValueError(f"--params 不是合法 JSON（{exc}）；例子：--params "
+                         '\'{"ring_r":1200}\'') from exc
+    if not isinstance(params, dict):
+        raise ValueError('--params 需要是 JSON 对象，例如 --params \'{"ring_r":1200}\'')
+    return algorithm_id, params
 
 
-def build(sim, params: dict | None = None, *, verbose: bool = False):
-    """构造策略对象（注册表按 `params` 覆盖本模块的模块级常量）。
+def build_hunter(sim, args, verbose: bool = False):
+    """按 --algorithm / --params 构造策略对象。
 
-    先用 `SPEC.params` 的默认值把常量复位，再叠加调用方的覆盖值。复位这一步是为了
-    让网页上连续跑多局时结果可复现——模块级常量是进程级的，否则上一局的参数会残留。
+    算法本体登记在 algorithms/ 下（见 algorithms/README.md）：加一个新算法只要在
+    那个目录里加一个模块，不用改这里。缺省仍是"第三题初版算法"。
     """
-    effective = {**SPEC.params, **(params or {})}
-    for key, value in effective.items():
-        attr = PARAM_CONSTANTS.get(key)
-        if not attr or attr not in globals():
-            continue
-        globals()[attr] = int(value) if key in _INT_CONSTANTS else float(value)
+    import algorithms
 
-    # `InterferenceHunter.refine(ch, max_iter=MAX_REFINE)` 的默认值在函数定义时就
-    # 定死了，改模块常量对已定义的函数不起作用，这里同步把默认值换掉。
-    max_iter = effective.get("max_refine")
-    if isinstance(max_iter, (int, float)):
-        InterferenceHunter.refine.__defaults__ = (int(max_iter),)
+    algorithm_id, params = _algorithm_choice(args)
+    return algorithms.build_algorithm(algorithm_id, sim, params, verbose=verbose)
 
-    return InterferenceHunter(sim, verbose=verbose)
+
+def run_dry_run(args) -> int:
+    """用本地模拟环境自测策略，统计"清除比例"与"平均定位清除时间"。"""
+    try:
+        from mock_arena import MockArena
+    except ImportError:
+        print("缺少 mock_arena.py，无法离线自测。")
+        return 2
+
+    import algorithms
+
+    try:
+        algorithm_id, params = _algorithm_choice(args)
+        spec = algorithms.get_spec(algorithm_id)
+    except (KeyError, ValueError) as exc:
+        print(f"[错误] {exc}")
+        return 2
+    print(f"算法：{spec.name}（{spec.id} · {spec.problem}）"
+          f"    参数覆盖：{params if params else '（用默认值）'}")
+
+    rows = []
+    for case in range(args.cases):
+        seed = args.seed + case
+        arena = MockArena(seed=seed)
+        hunter = algorithms.build_algorithm(algorithm_id, arena, params,
+                                            verbose=not args.quiet)
+        stats = hunter.run()
+        total = arena.n_sources
+        rows.append((seed, total, stats["cleared"], stats["平均定位清除时间"],
+                     stats["虚拟总时间"], stats["measure次数"], stats["clear次数"]))
+        print(f"[案例 {case + 1:2d}] seed={seed:5d}  干扰源 {total:2d} 个  "
+              f"清除 {stats['cleared']:2d} 个 ({stats['cleared'] / total:6.1%})  "
+              f"平均定位清除时间 {stats['平均定位清除时间']:7.1f} s  "
+              f"虚拟总时间 {stats['虚拟总时间']:7.1f} s  "
+              f"measure {stats['measure次数']:3d} / clear {stats['clear次数']:3d}")
+        if stats["备注"]:
+            print(f"          备注：{'; '.join(stats['备注'][:3])}")
+
+    n = len(rows)
+    rate = sum(r[2] / r[1] for r in rows) / n
+    ok = [r for r in rows if r[2]]
+    avg = sum(r[3] for r in ok) / max(len(ok), 1)
+    print("-" * 96)
+    print(f"汇总：{n} 个案例，平均清除比例 {rate:6.2%}，平均定位清除时间 {avg:7.1f} s，"
+          f"平均虚拟总时间 {sum(r[4] for r in rows) / n:7.1f} s，"
+          f"平均 measure {sum(r[5] for r in rows) / n:5.1f} 次")
+    return 0
+
+
+# ================================================================== 入口
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="问题3：干扰源自动搜索定位与清除")
+    p.add_argument("--robot-id", required=True, help="参赛队号（须与模拟器登录队号一致）")
+    p.add_argument("--url", default=BASE_URL, help="模拟器接口地址")
+    p.add_argument("--log-dir", default="logs", help="行为日志目录（空串表示不写日志）")
+    p.add_argument("--dry-run", action="store_true", help="离线自测，不连接模拟器")
+    p.add_argument("--cases", type=int, default=10, help="离线自测的案例数")
+    p.add_argument("--seed", type=int, default=1, help="离线自测的随机种子起点")
+    p.add_argument("--quiet", action="store_true", help="不逐条打印请求/响应")
+    p.add_argument("--trace", default="",
+                   help="可选：把本次行为轨迹写入该 JSONL（供 webui.py 可视化）")
+    p.add_argument("--config", default="config.json",
+                   help="调试配置来源（延迟/断点），缺省读 config.json 的 debug 段")
+    p.add_argument("--algorithm", default="",
+                   help="算法 id（见 algorithms/README.md），缺省用注册表的默认算法")
+    p.add_argument("--params", default="",
+                   help='算法参数 JSON，覆盖默认值，例如 --params \'{"ring_r":1200}\'')
+    return p.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    if args.dry_run:
+        return run_dry_run(args)
+    try:
+        with SimulatorClient(args.robot_id, args.url,
+                             log_dir=(args.log_dir or None),
+                             verbose=not args.quiet) as raw:
+            sim = raw
+            tracer = None
+            if args.trace:
+                import trace_client
+                tracer = trace_client.attach(raw, args.trace, args.config)
+                sim = tracer
+                if tracer._gate.snapshot()["breakpoint"]["enabled"]:
+                    print("[提示] 配置里断点是开着的：直接跑 robot.py 时没人点“下一步”，"
+                          "每步会空等到超时才放行。要看单步请改用 "
+                          "python webui.py --run --robot-id <参赛队号>")
+            try:
+                hunter = build_hunter(sim, args, verbose=not args.quiet)
+            except (KeyError, ValueError) as exc:
+                print(f"[错误] {exc}")
+                return 2
+            stats = hunter.run()
+            if tracer is not None:
+                import trace_client
+                tracer.finish(stats, trace_client.final_state(hunter))
+    except Exception as exc:
+        if type(exc).__name__ == "AbortRequested":
+            print("[中止] 已在网页上请求中止本次运行（本次测试到此结束）。")
+            return 130
+        if isinstance(exc, (OSError, RuntimeError)):
+            # 倒计时未结束 / 测试已结束 / 未开始，接口会直接关闭；这类失败不消耗测试次数
+            print(f"[失败] 与模拟器通信中断：{exc}")
+            print("       请确认：模拟器已登录、已点开始测试、界面提示机器狗接口已就绪，")
+            print("       且 robot_id 与模拟器当前登录的参赛队号逐字节一致。")
+            return 1
+        raise
+    print("=" * 72)
+    for k, v in stats.items():
+        print(f"{k:>14}: {v}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+# ================================================================== 问题4 扩展说明
+# 问题4 多了定向干扰源（有效覆盖角度 180°，定向方向未知），需要改三处：
+#
+# 1) 探测布站：定向源只在其半平面内可测，因此"距离覆盖"不够，还要满足
+#    "包围条件"——对区域内任一点 p，p 必须落在"距 p ≤ 1000 m 的测站"的凸包内。
+#    数值结果：内层用间距 1000 m 的六边形格点 13 个，另加半径 1900 m、12 等分的
+#    外环，共 25 站可做到零漏检（814 万组"位置×方向"全部可覆盖）。外环是必要的：
+#    位于区域边界、朝外的定向源，在目标区域内部任何位置都测不到它。
+#
+# 2) 定位：no_signal 不再等于"距离超限"，还可能是"不在定向覆盖范围内"，
+#    因此不能再拿 no_signal 反推距离；示向度楔形交会本身仍然成立（只要测到过）。
+#
+# 3) 终局判据：near 也要求"位于有效覆盖角度范围内"，从背面靠近会返回
+#    no_signal，所以不能等 near；但 /clear 在 20 m 内不受定向朝向限制，
+#    因此以"clear 成功"作为终局。

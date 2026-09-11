@@ -44,10 +44,13 @@ def load_all(force: bool = True) -> None:
             path = pkg_dir / f"{mod.name}.py"
             mtime = path.stat().st_mtime if path.exists() else 0.0
             module = sys.modules.get(full)
-            if module is not None and _MTIMES.get(full) != mtime:
+            prev = _MTIMES.get(full)
+            if module is None:
+                module = importlib.import_module(full)   # 本进程第一次加载
+            elif prev is not None and prev != mtime:
                 module = importlib.reload(module)       # 源码被改过：热重载
-            elif module is None:
-                module = importlib.import_module(full)
+            # prev is None：别处已经 import 过这个模块，直接沿用，不要重复加载
+            # （重复加载会造出第二份类对象，`from robot import InterferenceHunter` 会指到旧的）
             _MTIMES[full] = mtime
         except Exception as exc:                        # noqa: BLE001
             errors[mod.name] = f"{type(exc).__name__}: {exc}"

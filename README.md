@@ -4,15 +4,14 @@
 
 | 文件 | 作用 |
 | --- | --- |
-| `robot.py` | **问题3 的机器狗策略与算法**（覆盖式探测 → 交会定位 → 精化逼近 → 滚动巡访清除） |
+| `robot.py` | **程序入口**：解析参数 → 套上录制/调试外壳 → 跑 `algorithms/` 里的算法（本身不含策略） |
+| `algorithms/` | **算法本体 + 注册表**：`p3_baseline.py` 是第三题初版算法的完整实现，每个 `.py` 是一个可选算法 |
 | `sim_client.py` | 模拟器 HTTP+JSON 客户端的薄封装（串行发送、幂等重试、双重校验、JSONL 日志） |
-| `mock_arena.py` | **本地离线模拟器**，按题目规则复刻电磁环境，用于无网络自测与调参 |
-| `probe_simulator.py` | 模拟器连通性探测脚本（只读，可选 `--enter`） |
-| `trace_client.py` | 行为轨迹记录壳：包装客户端记录每一步动作（**不改动 `robot.py`**） |
+| `trace_client.py` | 行为轨迹记录壳：包装客户端记录每一步动作（**不改动算法代码**） |
 | `step_gate.py` | 调试闸门：每步可加延迟、可停下来等网页点"下一步"（配置在 `config.json`） |
-| `algorithms/` | **算法注册表**：每个 `.py` 是一个可选算法（含"第三题初版算法"的登记与说明） |
 | `webui.py` | 可视化 Web 服务（读取 trace，提供页面与 JSON 接口） |
 | `webui.html` | 可视化页面：频道状态表、圆形地图、行动日志、汇总指标 |
+| `archived/` | **归档区**：离线模拟器 `mock_arena.py`、连通性探测 `probe_simulator.py`、旧版 `robot_v1.py`（详见 `archived/README.md`） |
 | `traces/` | 每次会话的行为轨迹 JSONL（可由 WebUI 直接可视化） |
 | `logs/` | 每次运行的指令-响应 JSONL 日志 |
 | `docs/` | 原始题目（B题.pdf / 附件1.docx / 附件2.docx）与阅读笔记 |
@@ -29,7 +28,7 @@ python robot.py --robot-id demo --dry-run --cases 20 --quiet
 python robot.py --robot-id <参赛队号>
 
 # 起跑前的连通性检查
-python probe_simulator.py --robot-id <参赛队号>
+python archived/probe_simulator.py --robot-id <参赛队号>
 
 # 可视化：离线生成 5 个案例并打开网页（无需模拟器/网络）
 python webui.py --demo --cases 5
@@ -60,16 +59,16 @@ python robot.py --robot-id demo --dry-run --cases 20 \
   开头），改 `SPEC`（id / 名称 / 题目 / 说明 / 默认参数）并实现 `build(sim, params, *,
   verbose=False)`，返回一个带 `run()` 的对象。**不用改网页、不用改注册表本身**，
   刷新页面就能选到。
-- **只改参数**：`build()` 里 `import robot` 后覆盖模块级常量即可（`algorithms/p3_baseline.py`
+- **只改参数**：在算法的 `build()` 里覆盖本模块的模块级常量即可（`algorithms/p3_baseline.py`
   就是这么做的）。
-- **改做法**：第三题那套的实现仍在 `robot.py` 的 `InterferenceHunter`，改那里；
-  对照表与注意事项见 `algorithms/README.md`。
+- **改做法**：第三题那套的实现就是 `algorithms/p3_baseline.py` 里的 `InterferenceHunter`，
+  直接改它；对照表与注意事项见 `algorithms/README.md`。
 
 当前已登记：
 
 | id | 名称 | 题目 | 实现位置 |
 | --- | --- | --- | --- |
-| `p3-baseline` | 第三题初版算法 | 问题3 | `robot.py` 的 `InterferenceHunter` |
+| `p3-baseline` | 第三题初版算法 | 问题3 | `algorithms/p3_baseline.py: InterferenceHunter` |
 
 写新算法只需守三条：动作全部走注入的 `sim`（录制/实时刷新/延迟/断点都挂在那一层）、
 严格串行、别在算法里 `time.sleep`（要放慢节奏用调试闸门）。
@@ -143,6 +142,7 @@ python robot.py --robot-id demo --dry-run --cases 20 \
 
 ## 问题4 的改造点
 
-见 `robot.py` 末尾注释：定向源只有 180° 覆盖范围，需要把"距离覆盖"升级为
-"包围条件"（区域内任一点必须落在其 1000 m 内测站的凸包中），并在区域外补一圈
-测站；终局判据改用 `/clear` 成功而不是 `near`。
+见 `algorithms/README.md` 末尾的"问题4 改造点"：定向源只有 180° 覆盖范围，需要把
+"距离覆盖"升级为"包围条件"（区域内任一点必须落在其 1000 m 内测站的凸包中），并在
+区域外补一圈测站；终局判据改用 `/clear` 成功而不是 `near`。新算法按
+`algorithms/_template.py` 起一个模块即可，不用改 `robot.py`。
