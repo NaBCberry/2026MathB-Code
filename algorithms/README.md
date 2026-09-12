@@ -11,18 +11,39 @@
 | id | 名称 | 题目 | 实现位置 |
 | --- | --- | --- | --- |
 | `p3-baseline` | 第三题初版算法 | 问题3 | `algorithms/p3_baseline.py: InterferenceHunter` |
+| `p3-wxm-fast` | 第三题 快速响应版（wxm FAST） | 问题3 | `algorithms/p3_v2.py: P3FastHunter` |
 | `p4-directional` | 第四题导航算法 | 问题4 | `algorithms/p4_directional.py: P4Hunter` |
 | `p4-v2-receding` | 第四题 v2 滚动时域算法 | 问题4 | `algorithms/p4_v2_receding.py: P4V2Hunter` |
 | `p4-wxm-v1` | 第四题定向鲁棒算法 | 问题4 | `algorithms/p4_wxm_v1.py: InterferenceHunter` |
 | `p4-wxm-v2` | 第四题定向鲁棒算法 v2（29 站） | 问题4 | `algorithms/p4_wxm_v2.py: InterferenceHunter` |
 
-> **待补依赖**：`algorithms/p3_v2.py`（第三题 快速响应版 wxm FAST）已经写好框架适配层、
-> 登记为 `p3-wxm-fast`，但它建在队友自己的 `dog_controller_safe.py`（基类
-> DogController/Config/Ledger/Certificate）与 `route_planner.py`（plan_route/next_task）
-> 之上，**这两个文件目前不在仓库里**，所以注册表暂时会报
-> `ModuleNotFoundError: No module named 'route_planner'`、下拉框里看不到它。
-> 把那两个文件丢进 `algorithms/`（与本文件同目录）后即可自动出现，无需再改任何代码
-> ——适配层已用桩件验证过：桥接、统计翻译、state 映射、注册全部通过。
+> **`p3_v2.py` 已改为"框架内自带"**：原来那份依赖队友 `dog_controller_safe.py` /
+> `route_planner.py` 的实现已被替换——现在文件上半部分是**整段复制的 `p3_baseline`
+> 框架**，下半部分是队友 FAST 思路的重新实现（子类 `P3FastHunter`），不再依赖任何
+> 外部模块。（队友的原版实现仍可在 git 历史里找到：提交 `934170c`。）
+
+### 第三题两套算法实测对比（离线模拟器，20/50 例）
+
+| 算法 / 配置 | 清除比例 | 平均定位清除时间 | 平均 measure |
+| --- | --- | --- | --- |
+| `p3-baseline`（固定 7 站环 + 滚动 TSP） | 100%（20 例） | **310 s** | **109** |
+| `p3-wxm-fast` 默认（固定环 + 统一最近邻 + 顺路扫频 cap=2 + 先精化再清） | **100%**（50 例） | 363 s | 132 |
+| ↑ 打开 `use_gap_stations`（覆盖缺口动态布点） | 100%（20 例） | 479 s | 171 |
+| ↑ 照搬 FAST 原值（`clear_try_radius=120`、`refine_before_clear=False`、cap=6） | 98.8%（20 例） | 525 s | 157 |
+| ↑ 固定环 + 无限量扫频（`scan_per_stop_cap=0`） | 82.1%（20 例） | 605 s | 179 |
+
+结论（也是给队友的反馈）：**在这套离线环境里，这四项改进没有一项能超过
+`p3-baseline`**，拆开看各占了多少：
+
+- 多测的频道是主要开销：132 次 vs 109 次 measure ≈ +140 s 检测时间；
+- 统一最近邻 + 清除折扣并没有把行驶里程压下来（约 3.2 ks → 3.7 ks），
+  它省的是"跨场折返"，而 7 站环本来就是一条短回路，没多少可省；
+- 覆盖缺口动态布点最明显（+1.2 ks）：它是针对队友自己"4 条固定环、30+ 站"的布站写的，
+  换到已经接近最优的 7 站环上，多跑的里程抵不过收益。
+
+所以第三题正式测试仍建议用 `p3-baseline`；这份文件的价值是把队友的思路**保留成一套
+可切换的对照实现**（论文的"算法对比"一节可以直接用上表），他后续改进后也能逐项复测。
+每个开关都在 `P3FastHunter.DEFAULTS` 里，网页控制台的参数框可以直接改着跑。
 
 ## 把队友交付的算法接进来（最小改动）
 
