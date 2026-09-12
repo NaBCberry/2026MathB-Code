@@ -195,6 +195,8 @@
           <span><i style="background:#dc2626"></i>未发现</span>
           <span><i style="background:#7c3aed"></i>定位结果(圆=保证误差界)</span>
           <span><i style="background:#dc2626;border-radius:0"></i>真值(仅离线可见)</span>
+          <span><i style="background:#60a5fa"></i>完备性测站(1000 m 覆盖圆)</span>
+          <span><i style="background:#d97706"></i>外环测站(区域外, 破定向盲区)</span>
           <span><i style="background:rgba(220,38,38,.12);border-radius:0;border:1px solid rgba(220,38,38,.45)"></i>真值·定向覆盖(180°)</span>
           <span><i style="background:rgba(37,99,235,.45)"></i>示向度扇形(±1°)∩可测范围</span>
           <span><i style="background:rgba(124,58,237,.6)"></i>交会定位区域</span>
@@ -416,6 +418,7 @@ function renderCards(){
   const vtot = T.virtual_total_s ?? summary.t ?? 0;
   const avg = cleared ? vtot/cleared : null;
   const rate = total ? cleared/total : null;
+  const SI = stationInfo();
   const cards = [
     ["干扰源总数", total!=null? total : "未知", total!=null? "" : "实机测试不返回真值"],
     ["已清除", cleared, "被清除干扰源个数"],
@@ -429,6 +432,8 @@ function renderCards(){
      meta.mode==="live" ? "真值不可见"
        : (meta.n_directional ? `定向 ${meta.n_directional}/${meta.n_sources} 个`
                              : `全向源 ${meta.n_sources ?? "?"} 个`)],
+    ["完备性测站", `${SI.st.length} 站`,
+     SI.label + (SI.note ? ` · ${SI.note}` : "")],
     ["本局算法", meta.algorithm_name || "—",
      meta.algorithm_problem ? `${meta.algorithm_problem} · ${meta.algorithm || ""}` : ""],
   ];
@@ -596,6 +601,50 @@ function drawSectorsAndRegions(ctx){
   }
 }
 
+/* ------------------------------------------------ 完备性测站（第三题 / 第四题不同）
+   第三题只有全向源：测站只要"以 1000 m 覆盖全区"，就能用"处处无信号 ⇒ 不存在"判掉，
+   于是原点 + 半径 1300 m 六等分共 7 站即可（最大覆盖半径 936 m < 1000 m）。
+   第四题有定向源：no_signal 还可能是"在盲区"，判据升级成"包围"——区域内每一点都要
+   落在其 1000 m 内无信号测站的凸包内，所以必须把测站铺到区域**外面**：
+   内层六边形格 13 站（覆盖半径 577 m）+ 半径 1900 m 外环 12 站。
+   实际巡访哪一套由算法决定（队友的版本是 29 / 35 站），因此优先用 trace 里由
+   trace_client 写入的 stations 事件；没有就按当前选的题目画典型布站。 */
+function _ring(r, k){
+  const a = [];
+  for(let i=0;i<k;i++){ const t = 2*Math.PI*i/k; a.push([r*Math.cos(t), r*Math.sin(t)]); }
+  return a;
+}
+function _hexLattice(limit){
+  const U = [1000, 0], V = [500, 866.0254037844386], out = [];
+  for(let i=-3;i<=3;i++) for(let j=-3;j<=3;j++){
+    const x = i*U[0] + j*V[0], y = i*U[1] + j*V[1];
+    if(Math.hypot(x, y) <= limit + 1e-9) out.push([x, y]);
+  }
+  out.sort((a,b)=>Math.hypot(a[0],a[1]) - Math.hypot(b[0],b[1]));
+  return out;
+}
+const PROBLEM_STATIONS = {
+  3: {st: [[0,0]].concat(_ring(1300, 6)),
+      label: "问题3 典型布站：7 站（原点 + 1300 m 六等分）",
+      note: "覆盖半径 936 m < 1000 m ⇒ 处处无信号可判不存在"},
+  4: {st: _hexLattice(1900).concat(_ring(1900, 12)),
+      label: "问题4 典型布站：25 站（内层六边形格 13 + 1900 m 外环 12）",
+      note: "内层覆盖 577 m，外环破边界朝外盲区"},
+};
+function traceStations(){
+  for(const e of (DATA && DATA.events) || [])
+    if(e.kind === "stations" && e.stations && e.stations.length) return e;
+  return null;
+}
+function stationInfo(){
+  const ev = traceStations();
+  if(ev) return {st: ev.stations, actual: true,
+                 label: `本局算法实际巡访：${ev.stations.length} 站`,
+                 note: (ev.algorithm_name || ev.algorithm || "")};
+  const p = Number($("offlineProblem").value) === 4 ? 4 : 3;
+  return Object.assign({actual: false}, PROBLEM_STATIONS[p]);
+}
+
 function resizeCanvas(){
   const cv = $("map"), r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio||1;
   cv.width = Math.round(r.width*dpr); cv.height = Math.round(r.height*dpr);
@@ -629,18 +678,20 @@ function renderMap(){
   ctx.strokeStyle="#e2e8f0"; ctx.lineWidth=1; ctx.stroke();
 
   if($("ckGuide").checked){                          // 覆盖测站 + 1000m 保守覆盖圆
+    const info = stationInfo();
     ctx.save();
     ctx.beginPath(); ctx.rect(0,0,w,h); ctx.clip();
-    const st = [[0,0]];
-    for(let i=0;i<6;i++){ const a=2*Math.PI*i/6; st.push([1300*Math.cos(a),1300*Math.sin(a)]); }
-    for(const [x,y] of st){
+    for(const [x,y] of info.st){
+      const outside = Math.hypot(x,y) > 1800.5;      // 区域外的外环：换一种颜色
       ctx.beginPath(); ctx.arc(TX(x),TY(y),1000*view.k,0,Math.PI*2);
-      ctx.strokeStyle="rgba(37,99,235,.16)"; ctx.lineWidth=1; ctx.stroke();
+      ctx.strokeStyle = outside ? "rgba(217,119,6,.22)" : "rgba(37,99,235,.16)";
+      ctx.lineWidth = 1; ctx.stroke();
     }
     ctx.restore();
-    for(const [x,y] of st){
+    for(const [x,y] of info.st){
+      const outside = Math.hypot(x,y) > 1800.5;
       ctx.beginPath(); ctx.arc(TX(x),TY(y),3,0,Math.PI*2);
-      ctx.fillStyle="#60a5fa"; ctx.fill();
+      ctx.fillStyle = outside ? "#d97706" : "#60a5fa"; ctx.fill();
     }
   }
 
@@ -924,6 +975,8 @@ function bind(){
   });
   document.querySelectorAll(".bpAct").forEach(el=>{ el.onchange = ()=>pushDebug(false); });
   ["ckTruth","ckGuide","ckEst","onlysig","ckSector","ckRegion"].forEach(id => $(id).onchange = render);
+  // 切换离线题目时立刻改画对应的完备性布站（第三题 7 站 / 第四题 25 站）
+  $("offlineProblem").onchange = render;
   const chanSel = $("ckChan");
   if(chanSel){
     for(const c of CHS){

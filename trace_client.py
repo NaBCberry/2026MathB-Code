@@ -243,6 +243,21 @@ def run_session(*, mode: str, out: str | Path, seed: int | None = None,
     def build(client):
         return algorithms.build_algorithm(algorithm_id, client, params)
 
+    def note_stations(recorder, hunter, arena_problem):
+        """把本局算法"为保证完备性必须巡访的测站"写进 trace。
+
+        第三题与第四题的这套站点完全不同（7 站环 vs 内层 13 + 外环 12），
+        网页要按题目把它们标出来；写在 trace 里还能顺带记录"实际用的是哪套布站"
+        （各算法可以不一样，例如队友的 29 站 / 35 站版本）。
+        """
+        try:
+            stations = [[float(p[0]), float(p[1])] for p in hunter.survey_stations()]
+        except Exception:                     # noqa: BLE001 —— 算法没提供就算了
+            return
+        recorder.note({"kind": "stations", "stations": stations,
+                       "problem": arena_problem, "algorithm": spec.id,
+                       "algorithm_name": spec.name})
+
     if mode == "mock":
         from archived.mock_arena import MockArena      # 离线模拟器已归档
         arena = MockArena(seed=seed, problem=problem, n_sources=n_sources,
@@ -260,6 +275,7 @@ def run_session(*, mode: str, out: str | Path, seed: int | None = None,
         rec = TraceRecorder(out, meta)
         client = TracingClient(arena, rec, gate)
         hunter = build(client)
+        note_stations(rec, hunter, arena.problem)
         try:
             stats = hunter.run()
         except AbortRequested as exc:
@@ -279,6 +295,7 @@ def run_session(*, mode: str, out: str | Path, seed: int | None = None,
         client = TracingClient(inner, rec, gate)
         try:
             hunter = build(client)
+            note_stations(rec, hunter, None)      # 实机：题目由算法自己声明
             try:
                 stats = hunter.run()
             except AbortRequested as exc:
