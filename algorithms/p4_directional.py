@@ -92,6 +92,40 @@ def _poly_samples(poly: list, step: float = 15.0) -> list[tuple[float, float]]:
     return out
 
 
+def _poly_grid(poly: list, step: float = 10.0) -> list[tuple[float, float]]:
+    """按扫描线在多边形**内部**铺点（凸多边形，用水平线与各边的交点配对）。
+
+    只采周长是不够的：定位区域常常是一条 1500 m 长、几十米宽的细长条，
+    沿周长打点再贪心铺清会要求一百多个试探点（超过 `max_probes` 就直接放弃了），
+    而沿"轴线"铺只要几十个。这里按 step 米在内部打一层点，贪心自然会沿轴线走。
+    """
+    ys = [p[1] for p in poly]
+    y0, y1 = min(ys), max(ys)
+    rows = max(int((y1 - y0) / step) + 1, 1)
+    out: list[tuple[float, float]] = []
+    n = len(poly)
+    for i in range(rows + 1):
+        y = y0 + (y1 - y0) * i / rows
+        xs: list[float] = []
+        for k in range(n):
+            xa, ya = poly[k]
+            xb, yb = poly[(k + 1) % n]
+            if ya == yb:
+                if ya == y:
+                    xs.extend((xa, xb))
+                continue
+            if (ya - y) * (yb - y) <= 0:
+                t = (y - ya) / (yb - ya)
+                xs.append(xa + t * (xb - xa))
+        xs.sort()
+        for k in range(0, len(xs) - 1, 2):
+            lo, hi = xs[k], xs[k + 1]
+            span = max(int((hi - lo) / step), 1)
+            for j in range(span + 1):
+                out.append((lo + (hi - lo) * j / span, y))
+    return out
+
+
 #: 判定"某频道不存在"时用的采样点：60 m 网格 + 边界 1° 加密
 EXCLUDE_SAMPLES = list(SAMPLES) + _border_samples()
 
@@ -104,6 +138,7 @@ class P4Hunter(InterferenceHunter):
         "max_step": 700.0,          # 逼近段单次最多走多远（m）
         "good_radius": 300.0,       # 定位区域半径 ≤ 它 → 转入 ±45° 精定位
         "max_stuck": 4,             # 连续几次没进展就放弃该频道（防死循环）
+        "focus_slack": 600.0,       # 频道承诺：为坚持同一频道，最多容忍多绕多少米
         "max_probes": 120,          # 铺清时最多试探几次 /clear（够盖住区域内任何细长条）
         "probe_gap": 20.0,          # 铺清间距（= 清除半径，保证盖满整个区域）
         "time_guard": 0.25,         # 剩余现实时间低于此比例时，只清目标不再普查
@@ -366,11 +401,11 @@ class P4Hunter(InterferenceHunter):
                 return True
             # 测不到又清不掉：区域不大就按"盖满"的顺序把它铺清
             if (r["measure_result"] == "no_signal" and st.polygon is not None
-                    and self._sweep_plan(ch) is not None):
+                    and self._sweep_plan_cached(ch) is not None):
                 return self._clear_sweep(ch)
             return False
         # 候选点全试过还没收敛：能铺清就铺清，否则在估计中心做最后一击
-        if st.polygon is not None and self._sweep_plan(ch) is not None:
+        if st.polygon is not None and self._sweep_plan_cached(ch) is not None:
             if self._clear_sweep(ch):
                 return True
         if st.center is not None:
@@ -386,6 +421,22 @@ class P4Hunter(InterferenceHunter):
         return self.state[ch].center          # 候选点用完：交给 work() 兜底
 
     # -------------------------------------------------------------- 铺清兜底
+    def _sweep_plan_cached(self, ch: int) -> list[tuple[float, float]] | None:
+        """按"定位区域指纹"缓存铺清计划：同一条区域上连着试探时不必反复重算。
+
+        `_poly_grid` + 贪心最远点是 O(采样点 × 试探点)，一次几毫秒到几十毫秒；
+        `work()` 里每次 no_signal 都会问一次"能不能铺清"，所以必须缓存。
+        """
+        st = self.state[ch]
+        sig = (len(st.bearings),
+               round(st.radius, 1) if math.isfinite(st.radius) else -1.0,
+               len(st.polygon) if st.polygon else 0)
+        cached = self._sweep.get(ch)
+        if cached is None or cached[0] != sig:
+            cached = (sig, self._sweep_plan(ch))
+            self._sweep[ch] = cached
+        return cached[1]
+
     def _sweep_plan(self, ch: int) -> list[tuple[float, float]] | None:
         """排一个能"盖满"定位区域的 /clear 试探序列；盖不满就返回 None。
 
@@ -399,17 +450,10 @@ class P4Hunter(InterferenceHunter):
             return None
         gap = float(self.p["probe_gap"])
         cap = int(self.p["max_probes"])
-        # 预判：一个半径 20 m 的圆盘最多盖住 2·gap 米边界，周长太长就直接否掉，
-        # 免得为了得到一个"盖不满"的结论白跑几百次贪心迭代（长条区域很常见）。
-        perim = 0.0
-        n = len(st.polygon)
-        for i in range(n):
-            x0, y0 = st.polygon[i]
-            x1, y1 = st.polygon[(i + 1) % n]
-            perim += math.hypot(x1 - x0, y1 - y0)
-        if perim > 2.0 * gap * cap:
-            return None
-        samples = _poly_samples(st.polygon, gap)
+        step = gap * 0.5                      # 内部采样间距（10 m）
+        cover = gap - step * 0.75             # 采样点被覆盖到的判据（≈13 m）
+        # 边界 + 内部都要采：只采边界时，细长区域要一百多个点才盖得满
+        samples = _poly_samples(st.polygon, gap) + _poly_grid(st.polygon, step)
         if not samples:
             return None
         done: list[tuple[float, float]] = list(self._probes.get(ch, []))
@@ -425,7 +469,7 @@ class P4Hunter(InterferenceHunter):
         plan: list[tuple[float, float]] = []
         while len(done) + len(plan) < cap:
             i = max(range(len(samples)), key=lambda j: dist[j])
-            if dist[i] < gap:
+            if dist[i] < cover:
                 return plan                  # 区域已被盖满
             bx, by = samples[i]
             plan.append((bx, by))
@@ -433,7 +477,11 @@ class P4Hunter(InterferenceHunter):
                 d = math.hypot(px - bx, py - by)
                 if d < dist[j]:
                     dist[j] = d
-        return None                          # 名额用光还没盖满：放弃铺清
+        # 名额用光还没盖满：退回"尽力而为"的部分计划，而不是直接放弃。
+        # 贪心最远点的前若干个点是**散开覆盖全区**的，`_clear_sweep` 又按"离当前位置
+        # 最近"执行，所以近端（真源最可能待的那一端，测站就在这里）会被先扫到。
+        # 纯放弃时实测漏源：真源就在测站旁边 30 m 处，却因为"远端盖不满"整条区域都不扫。
+        return plan if plan else None
 
     def _clear_sweep(self, ch: int) -> bool:
         """定位区域测不准时，用 /clear 把它"铺清"。
@@ -445,14 +493,7 @@ class P4Hunter(InterferenceHunter):
         几次就扫掉了，比继续在盲区里绕圈便宜（每次落空只要 3 s）。
         """
         st = self.state[ch]
-        # 计划只跟"当前定位区域"有关：同一条区域上连着试探时不必反复重算
-        # （贪心最远点是 O(n²)，几十个点重算一遍要几十毫秒，不能每轮都算）。
-        sig = (len(st.bearings), round(st.radius, 1) if math.isfinite(st.radius) else -1.0)
-        cached = self._sweep.get(ch)
-        if cached is None or cached[0] != sig:
-            cached = (sig, self._sweep_plan(ch))
-            self._sweep[ch] = cached
-        plan = cached[1]
+        plan = self._sweep_plan_cached(ch)
         if not plan:
             return False
         done = set(self._probes.get(ch, []))
@@ -484,6 +525,8 @@ class P4Hunter(InterferenceHunter):
         self.clean_sweep(0.0, 0.0)
         pending = [p for p in self.survey_stations() if p != (0.0, 0.0)]
         failed: set[int] = set()
+        focus: int | None = None          # 正在集中处理的频道（"承诺"）
+        slack = float(self.p["focus_slack"])
 
         while not self._out_of_time() and not self._all_done():
             tasks: list[tuple[tuple[float, float], str, int | None]] = [
@@ -511,6 +554,23 @@ class P4Hunter(InterferenceHunter):
             # 滚动 TSP：对当前待办点集重新排一次序，取最近的一件去做
             order = plan_tsp([t[0] for t in tasks], self.pos)
             pt, kind, ch = tasks[order[0]]
+            # 频道承诺：一次 work 只推进一个动作，如果每轮都按"全局最近"重排，
+            # 机器狗会在几条正在逼近的射线之间来回跳（实测 78% 的虚拟时间花在
+            # 移动上，里程 31 km vs 理论上界 21 km，超过 800 m 的长途跳转上百次）。
+            # 这里在"顺路不亏太多"的前提下，坚持把同一个频道做完。
+            if focus is not None:
+                cur = self.state[focus]
+                if cur.cleared or focus in failed or not cur.known:
+                    focus = None
+            if focus is not None and slack > 0.0:
+                cand = [(i, t) for i, t in enumerate(tasks)
+                        if t[1] == "work" and t[2] == focus]
+                if cand:
+                    i_f, t_f = cand[0]
+                    d_f = math.dist(self.pos, t_f[0])
+                    d_b = math.dist(self.pos, tasks[order[0]][0])
+                    if d_f <= d_b + slack:
+                        pt, kind, ch = t_f
             if kind == "survey":
                 self.clean_sweep(pt[0], pt[1])
                 if pt in pending:
@@ -518,6 +578,7 @@ class P4Hunter(InterferenceHunter):
                 continue
 
             assert ch is not None
+            focus = ch
             st = self.state[ch]
             before = (st.radius, len(self._probes.get(ch, ())))
             self.work(ch)
