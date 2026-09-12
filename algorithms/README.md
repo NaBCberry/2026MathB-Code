@@ -16,6 +16,14 @@
 | `p4-wxm-v1` | 第四题定向鲁棒算法 | 问题4 | `algorithms/p4_wxm_v1.py: InterferenceHunter` |
 | `p4-wxm-v2` | 第四题定向鲁棒算法 v2（29 站） | 问题4 | `algorithms/p4_wxm_v2.py: InterferenceHunter` |
 
+> **待补依赖**：`algorithms/p3_v2.py`（第三题 快速响应版 wxm FAST）已经写好框架适配层、
+> 登记为 `p3-wxm-fast`，但它建在队友自己的 `dog_controller_safe.py`（基类
+> DogController/Config/Ledger/Certificate）与 `route_planner.py`（plan_route/next_task）
+> 之上，**这两个文件目前不在仓库里**，所以注册表暂时会报
+> `ModuleNotFoundError: No module named 'route_planner'`、下拉框里看不到它。
+> 把那两个文件丢进 `algorithms/`（与本文件同目录）后即可自动出现，无需再改任何代码
+> ——适配层已用桩件验证过：桥接、统计翻译、state 映射、注册全部通过。
+
 ## 把队友交付的算法接进来（最小改动）
 
 队友给一个 `.py` 丢进 `algorithms/` 之后，通常只需要动**登记块**三行，算法本体一行不用改：
