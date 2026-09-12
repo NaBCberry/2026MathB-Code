@@ -14,6 +14,7 @@
 | `p4-directional` | 第四题导航算法 | 问题4 | `algorithms/p4_directional.py: P4Hunter` |
 | `p4-v2-receding` | 第四题 v2 滚动时域算法 | 问题4 | `algorithms/p4_v2_receding.py: P4V2Hunter` |
 | `p4-wxm-v1` | 第四题定向鲁棒算法 | 问题4 | `algorithms/p4_wxm_v1.py: InterferenceHunter` |
+| `p4-wxm-v2` | 第四题定向鲁棒算法 v2（29 站） | 问题4 | `algorithms/p4_wxm_v2.py: InterferenceHunter` |
 
 ## 把队友交付的算法接进来（最小改动）
 
@@ -38,6 +39,7 @@
 | `p3-baseline`（第三题算法跑第四题环境） | 74% | 437 s | 124 | 对照基线：它的停止判据在定向源下不成立 |
 | `p4-directional` | 99.83%（100 例） | 642 s | 300 | 25 站包围布站 + 自适应逼近 + `/clear` 铺清兜底 |
 | `p4-wxm-v1` | **100%**（50 例） | 749 s | 379 | 队友方案：35 站三环布站（独立复核：10.1 万组位置×方向零漏检） |
+| `p4-wxm-v2` | 99.69%（50 例，2 个源没清掉） | 665 s | 320 | 队友方案精简版：29 站（原点+900m×10+1830m×18，独立复核 305 万组零漏检），里程更省 |
 | `p4-v2-receding` | 100%（10 例，样本还少） | 593 s | 296 | 滚动时域版本 |
 
 ## 三条使用路径

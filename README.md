@@ -82,6 +82,7 @@ python robot.py --robot-id demo --dry-run --cases 20 \
 | `p4-directional` | 第四题导航算法 | 问题4 | `algorithms/p4_directional.py: P4Hunter` |
 | `p4-v2-receding` | 第四题 v2 滚动时域算法 | 问题4 | `algorithms/p4_v2_receding.py: P4V2Hunter` |
 | `p4-wxm-v1` | 第四题定向鲁棒算法 | 问题4 | `algorithms/p4_wxm_v1.py: InterferenceHunter` |
+| `p4-wxm-v2` | 第四题定向鲁棒算法 v2（29 站） | 问题4 | `algorithms/p4_wxm_v2.py: InterferenceHunter` |
 
 写新算法只需守三条：动作全部走注入的 `sim`（录制/实时刷新/延迟/断点都挂在那一层）、
 严格串行、别在算法里 `time.sleep`（要放慢节奏用调试闸门）。
