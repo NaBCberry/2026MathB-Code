@@ -12,6 +12,33 @@
 | --- | --- | --- | --- |
 | `p3-baseline` | 第三题初版算法 | 问题3 | `algorithms/p3_baseline.py: InterferenceHunter` |
 | `p4-directional` | 第四题导航算法 | 问题4 | `algorithms/p4_directional.py: P4Hunter` |
+| `p4-v2-receding` | 第四题 v2 滚动时域算法 | 问题4 | `algorithms/p4_v2_receding.py: P4V2Hunter` |
+| `p4-wxm-v1` | 第四题定向鲁棒算法 | 问题4 | `algorithms/p4_wxm_v1.py: InterferenceHunter` |
+
+## 把队友交付的算法接进来（最小改动）
+
+队友给一个 `.py` 丢进 `algorithms/` 之后，通常只需要动**登记块**三行，算法本体一行不用改：
+
+1. `SPEC.id` 换成全局唯一的（别和现有算法重名）。**这是最容易踩的坑**：一旦 `id` 抄成
+   别人的，注册表会按"重复 id"把整个模块跳过，网页上只留一条 ⚠ 告警，下拉框里看不到它。
+2. `SPEC.name` 写清楚（同题多套算法时，名字里带上作者/版本，方便在网页下拉里区分）。
+3. `SPEC.entry` 指向**他自己的文件**，别留着从别人那里复制来的路径。
+
+再确认两件事：`build(sim, params=None, *, verbose=False)` 签名一致、返回的对象有
+`run()`；动作全部走注入的 `sim`。参数覆盖那套（把 params 写回模块级常量）他的
+`build()` 里一般已经写好了，不用重复实现。
+
+> 注：队友的文件如果被编辑器标了**只读属性**，改之前先去掉
+> （PowerShell：`Set-ItemProperty <文件> -Name IsReadOnly -Value $false`）。
+
+### 第四题现有三套算法 + 一条对照基线（离线模拟器，自动生成定向源）
+
+| 算法 | 清除比例 | 平均定位清除时间 | 平均 measure | 说明 |
+| --- | --- | --- | --- | --- |
+| `p3-baseline`（第三题算法跑第四题环境） | 74% | 437 s | 124 | 对照基线：它的停止判据在定向源下不成立 |
+| `p4-directional` | 99.83%（100 例） | 642 s | 300 | 25 站包围布站 + 自适应逼近 + `/clear` 铺清兜底 |
+| `p4-wxm-v1` | **100%**（50 例） | 749 s | 379 | 队友方案：35 站三环布站（独立复核：10.1 万组位置×方向零漏检） |
+| `p4-v2-receding` | 100%（10 例，样本还少） | 593 s | 296 | 滚动时域版本 |
 
 ## 三条使用路径
 
