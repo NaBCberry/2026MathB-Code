@@ -102,7 +102,9 @@
     }
   }
 
-  // 本文件插在主脚本之前、且在 </body> 附近执行，此时 header/按钮都已经解析出来了
+  // 本文件插在主脚本之前、且在 </body> 附近执行，此时 header 与那几个按钮都已经解析
+  // 出来了，所以**立刻**装饰一次：必须在主脚本跑起来之前把"自动刷新"关掉、把按钮禁用，
+  // 否则主脚本一上来就会去连不存在的 SSE。DOMContentLoaded 再补一次（幂等，无副作用）。
+  decorate();
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", decorate);
-  else decorate();
 })();
