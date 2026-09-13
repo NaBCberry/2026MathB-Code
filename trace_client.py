@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import time
 from pathlib import Path
 
@@ -29,6 +30,44 @@ MEASURE_S = 5.0
 SWITCH_S = 1.0
 CLEAR_HIT_S = 5.0
 CLEAR_MISS_S = 3.0
+
+
+# ---------------------------------------------------------------- 自定义种子
+MAX_SEEDS = 2000                      # 一次最多展开多少个种子（防手滑写 "1-1000000"）
+_RANGE_RE = re.compile(r"^(-?\d+)\s*-\s*(-?\d+)$")
+_INT_RE = re.compile(r"^-?\d+$")
+
+
+def parse_seeds(text: str) -> list[int]:
+    """把"自定义种子"的写法解析成整数列表（robot.py / webui.py 共用）。
+
+    支持的写法::
+
+        27880            单个
+        27880,1031       逗号分隔（中文逗号、顿号也行）
+        1 2 3            空格/分号分隔
+        1-5              闭区间（含两端，可以倒序写 5-1）
+        1-3,27880,-7     混合
+
+    空串返回 `[]`；有看不懂的项、或展开超过 `MAX_SEEDS` 个时抛 `ValueError`，
+    由调用方决定怎么提示。
+    """
+    out: list[int] = []
+    for part in re.split(r"[,;、\s]+", (text or "").strip()):
+        if not part:
+            continue
+        m = _RANGE_RE.match(part)
+        if m:
+            a, b = int(m.group(1)), int(m.group(2))
+            step = 1 if b >= a else -1
+            out.extend(range(a, b + step, step))
+            if len(out) > MAX_SEEDS:
+                raise ValueError(f"种子太多（超过 {MAX_SEEDS} 个），请分批跑")
+            continue
+        if not _INT_RE.match(part):
+            raise ValueError(f"看不懂的种子写法：{part!r}（例：27880 或 27880,1031 或 1-5）")
+        out.append(int(part))
+    return out
 
 
 def _finite(value):
@@ -223,7 +262,8 @@ def run_session(*, mode: str, out: str | Path, seed: int | None = None,
                 problem: int = 3, n_sources: int | None = None,
                 n_directional: int | None = None,
                 directional_fraction: float | None = None, gate=None,
-                algorithm: str = "", params: dict | None = None) -> dict:
+                algorithm: str = "", params: dict | None = None,
+                case_code: str = "") -> dict:
     """跑一局（离线 mock 或真实模拟器），产出 trace 文件，返回统计字典。
 
     `algorithm` / `params` 选算法与参数（见 algorithms/README.md）；缺省用注册表
@@ -231,6 +271,10 @@ def run_session(*, mode: str, out: str | Path, seed: int | None = None,
 
     `problem` 只对离线 `mode="mock"` 有意义：3 = 全全向源（默认），4 = 全向 + 定向
     混合。连接真实模拟器时不传这个参数，行为与以前完全一样。
+
+    `case_code` 是模拟器界面上显示的「测试案例编码」（接口不返回），只对实机一局
+    有意义：会写进 trace 的 meta 和 `logs/robot-*.jsonl` 的第一行，供填论文表 1
+    和把日志文件对上号用。留空就是没登记。
     """
     import algorithms
 
@@ -290,8 +334,11 @@ def run_session(*, mode: str, out: str | Path, seed: int | None = None,
     if mode == "live":
         from sim_client import SimulatorClient
         rec = TraceRecorder(out, {"mode": "live", "robot_id": robot_id, "url": url,
-                                  **algo_meta})
-        inner = SimulatorClient(robot_id, url, log_dir=log_dir, verbose=False)
+                                  "case_code": case_code, **algo_meta})
+        # 把算法信息也写进 logs/robot-*.jsonl 的第一行：正式测试的日志要能和
+        # "这局跑的哪套算法"对上（trace 的 meta 里有，但那份是另一条链路）。
+        inner = SimulatorClient(robot_id, url, log_dir=log_dir, verbose=False,
+                                case_code=case_code, extra_meta=algo_meta)
         client = TracingClient(inner, rec, gate)
         try:
             hunter = build(client)
@@ -331,6 +378,11 @@ def main() -> int:
     p.add_argument("--mode", choices=("mock", "live"), default="mock")
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--cases", type=int, default=1, help="mock 模式下连续跑几个案例")
+    p.add_argument("--seeds", default="",
+                   help="mock 模式的自定义种子：逗号/空格分隔，支持区间"
+                        "（例：27880,1031 或 1-5）；给了它就忽略 --seed/--cases")
+    p.add_argument("--problem", type=int, default=3, choices=(3, 4),
+                   help="mock 模式的题目：3 = 全向源（默认），4 = 全向 + 定向混合")
     p.add_argument("--out", default="", help="单个 trace 的输出路径")
     p.add_argument("--out-dir", default="traces", help="多案例时的输出目录")
     p.add_argument("--robot-id", default="", help="live 模式必填")
@@ -342,13 +394,22 @@ def main() -> int:
 
     params = json.loads(args.params) if args.params else {}
 
-    if args.mode == "mock" and args.cases > 1:
-        for i in range(args.cases):
-            seed = args.seed + i
+    if args.mode == "mock" and (args.seeds.strip() or args.cases > 1):
+        try:
+            seeds = parse_seeds(args.seeds) if args.seeds.strip() else [
+                args.seed + i for i in range(max(int(args.cases), 0))]
+        except ValueError as exc:
+            print(f"--seeds 解析失败：{exc}")
+            return 2
+        if not seeds:
+            print("没有要跑的种子：--cases 至少给 1，或用 --seeds 指定。")
+            return 2
+        for i, seed in enumerate(seeds):
             path = Path(args.out_dir) / f"mock-seed{seed}.jsonl"
             stats = run_session(mode="mock", out=path, seed=seed,
-                                algorithm=args.algorithm, params=params)
-            print(f"[{i + 1}/{args.cases}] {path}  清除 {stats['cleared']} 个  "
+                                algorithm=args.algorithm, params=params,
+                                problem=args.problem)
+            print(f"[{i + 1}/{len(seeds)}] {path}  清除 {stats['cleared']} 个  "
                   f"平均定位清除时间 {stats['平均定位清除时间']:.1f} s")
         return 0
 
@@ -356,7 +417,8 @@ def main() -> int:
         f"mock-seed{args.seed}.jsonl" if args.mode == "mock" else "live.jsonl"))
     stats = run_session(mode=args.mode, out=out, seed=args.seed,
                         robot_id=args.robot_id, url=args.url, log_dir=args.log_dir,
-                        algorithm=args.algorithm, params=params)
+                        algorithm=args.algorithm, params=params,
+                        problem=args.problem)
     print(f"trace 已写入 {out}")
     for k, v in stats.items():
         print(f"  {k}: {v}")

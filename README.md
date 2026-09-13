@@ -27,6 +27,10 @@ python robot.py --robot-id demo --dry-run --cases 20 --quiet
 # 离线自测第四题环境（全向 + 定向混合；第三题环境是 --problem 3，默认）
 python robot.py --robot-id demo --dry-run --cases 20 --problem 4 --quiet
 
+# 只跑指定的几个种子（第三题第四题通用；支持 ", 空格 和 1-5 区间" 三种写法）
+python robot.py --robot-id demo --dry-run --problem 4 --seeds 27880,1031 --quiet
+python robot.py --robot-id demo --dry-run --problem 3 --seeds 1-5 --quiet
+
 # 第四题导航算法：25 站包围式排查 + 沿示向度逼近 + /clear 铺清兜底
 python robot.py --robot-id demo --dry-run --cases 100 --problem 4 \
        --algorithm p4-directional --quiet        # 离线 100 例：清除比例 99.83%
@@ -42,6 +46,9 @@ python webui.py --demo --cases 5
 
 # 可视化：离线生成第四题案例（网页控制台里也能随时切换第三/第四题）
 python webui.py --demo --cases 5 --problem 4
+
+# 可视化：只生成指定的几个种子（网页控制台的"种子"框同样能填）
+python webui.py --demo --seeds 27880,1031 --problem 4
 
 # 可视化：接真实模拟器跑一局，网页实时刷新
 python webui.py --run --robot-id <参赛队号>
@@ -99,6 +106,12 @@ python robot.py --robot-id demo --dry-run --cases 20 \
   只影响离线案例（「生成新案例」「离线案例」两个按钮）；**实机运行不受影响**，
   连模拟器的那条路一个参数都没变。案例名会带上 `p3`/`p4`，trace 列表里也标了出来；
   离线第四题的地图上，定向源会多画一个 180° 的覆盖扇形（真值，仅离线可见）。
+- **自定义种子**（"离线题目"右边的输入框）：留空 = 随机一个；填 `27880` 就重跑那一局，
+   填 `27880,1031` 或 `1-5` 就是连跑这几局（逗号/空格分隔，区间含两端）。连跑是**串行**的
+   （调试闸门是全局的，串行才不会让人不知道该放行哪一局），状态栏显示"第 k/n 局"，
+   每跑完一局就自动切过去看，全部跑完停在最后一局。
+   想要"同一个种子把两个题目都跑一遍"，就把"离线题目"选成**第三题 + 第四题（同种子连跑）**：
+   会先按种子跑第三题、再按同一种子跑第四题（多个种子则是 2n 局，先题目后种子）。
 - **完备性测站**（地图上的"测站/覆盖"层）：第三、四题**为保证"全部清除"必须巡访的
   测站完全不同**，网页按题目分别标出——
   第三题 7 站（原点 + 1300 m 六等分，最大覆盖半径 936 m < 1000 m，靠"距离覆盖"就能

@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""第三题 快速响应版（wxm FAST 思路）—— 建在 p3_baseline 框架上的改进版。
+"""第三题 v2（快速响应版）—— 建在 p3_baseline 框架上的改进版。
 
 本文件的结构：**上半部分是原样复制的 ``algorithms/p3_baseline.py`` 框架**
 （常量、平面几何、ChannelState、InterferenceHunter），下半部分是队友那份
-「快速响应版 FAST」的四项改进，改写成一个子类 ``P3FastHunter``。这样它不依赖
+四项改进（思路来自队友的 FAST 版本），改写成一个子类 ``P3V2Hunter``。这样它不依赖
 队友的 ``dog_controller_safe.py`` / ``route_planner.py``，可以直接在本框架里跑。
 
 相对 ``p3_baseline`` 的改动（对应队友原文件里的 ①②③④）
 --------------------------------------------------------
-① **探测点按覆盖缺口动态生成**（``P3FastHunter._gap_candidates``）
+① **探测点按覆盖缺口动态生成**（``P3V2Hunter._gap_candidates``）
    原版固定"原点 + 半径 1300 m 均布 6 点"这一条环，等于先验地假定了一条巡回路线；
    FAST 改为每次从"还没被任何测站以 1000 m 覆盖到的采样点"里取缺口，按
    **单位时间期望收益**（新增覆盖点数 ÷ (行驶时间 + 6 s×要测的频道数)）挑一个去。
@@ -665,9 +665,9 @@ class InterferenceHunter:
         }
 
 
-# ================================================================== 快速响应版
-class P3FastHunter(InterferenceHunter):
-    """第三题快速响应版：覆盖缺口布点 + 顺路扫频 + 统一最近邻 + 清优先。
+# ================================================================== 第三题 v2
+class P3V2Hunter(InterferenceHunter):
+    """第三题 v2（快速响应版）：覆盖缺口布点 + 顺路扫频 + 统一最近邻 + 清优先。
 
     继承上面那份 p3_baseline 框架（几何、交会、精化、清除、覆盖自检全部复用），
     只改"在哪儿停、停几次、什么时候去扫、什么时候去清"这四件事。
@@ -963,8 +963,8 @@ class P3FastHunter(InterferenceHunter):
 
 # ================================================================== 算法登记
 SPEC = AlgorithmSpec(
-    id="p3-wxm-fast",
-    name="第三题 快速响应版（wxm FAST）",
+    id="p3-v2",
+    name="第三题 v2（快速响应版）",
     problem="问题3",
     summary="覆盖缺口动态布点 → 顺路扫频 → 统一最近邻调度 → 有把握就先去清",
     description=(
@@ -989,11 +989,15 @@ SPEC = AlgorithmSpec(
         "换到本框架已经很好的 7 站环上，省下的里程抵不过多测的频道，因此默认取实测最好的组合，"
         "并把每个开关都留着，便于在网页上逐项对比。"
     ),
-    params=dict(P3FastHunter.DEFAULTS),
-    entry="algorithms/p3_v2.py: P3FastHunter",
+    params=dict(P3V2Hunter.DEFAULTS),
+    entry="algorithms/p3_v2.py: P3V2Hunter",
 )
 
 
 def build(sim, params: dict | None = None, *, verbose: bool = False):
-    """构造快速响应版策略（参数只作用于本算法，不改 p3_baseline 的任何常量）。"""
-    return P3FastHunter(sim, params, verbose=verbose)
+    """构造第三题 v2 策略（参数只作用于本算法，不改 p3_baseline 的任何常量）。"""
+    return P3V2Hunter(sim, params, verbose=verbose)
+
+
+# 兼容旧引用（本文件早期叫 P3FastHunter / 算法 id 叫 p3-wxm-fast）
+P3FastHunter = P3V2Hunter

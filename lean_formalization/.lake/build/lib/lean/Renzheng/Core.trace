@@ -1,0 +1,96 @@
+{"synthetic": false,
+ "schemaVersion": "2025-09-10",
+ "outputs":
+ {"o": ["2c026f5afbda6c2a.olean"],
+  "m": false,
+  "i": "feda0bccf0106c85.ilean",
+  "c": "e56616e7414aca90.c"},
+ "log":
+ [{"message":
+   ".> LEAN_PATH=D:\\2026cumcm\\codes\\lean_formalization\\.lake\\packages\\Cli\\.lake\\build\\lib\\lean;D:\\2026cumcm\\codes\\lean_formalization\\.lake\\packages\\batteries\\.lake\\build\\lib\\lean;D:\\2026cumcm\\codes\\lean_formalization\\.lake\\packages\\Qq\\.lake\\build\\lib\\lean;D:\\2026cumcm\\codes\\lean_formalization\\.lake\\packages\\aesop\\.lake\\build\\lib\\lean;D:\\2026cumcm\\codes\\lean_formalization\\.lake\\packages\\proofwidgets\\.lake\\build\\lib\\lean;D:\\2026cumcm\\codes\\lean_formalization\\.lake\\packages\\importGraph\\.lake\\build\\lib\\lean;D:\\2026cumcm\\codes\\lean_formalization\\.lake\\packages\\LeanSearchClient\\.lake\\build\\lib\\lean;D:\\2026cumcm\\codes\\lean_formalization\\.lake\\packages\\plausible\\.lake\\build\\lib\\lean;D:\\2026cumcm\\codes\\lean_formalization\\_setup\\mathlib4\\.lake\\build\\lib\\lean;D:\\2026cumcm\\codes\\lean_formalization\\.lake\\build\\lib\\lean c:\\Users\\asus\\.elan\\toolchains\\leanprover--lean4---v4.33.0\\bin\\lean.exe D:\\2026cumcm\\codes\\lean_formalization\\Renzheng\\Core.lean -o D:\\2026cumcm\\codes\\lean_formalization\\.lake\\build\\lib\\lean\\Renzheng\\Core.olean -i D:\\2026cumcm\\codes\\lean_formalization\\.lake\\build\\lib\\lean\\Renzheng\\Core.ilean -c D:\\2026cumcm\\codes\\lean_formalization\\.lake\\build\\ir\\Renzheng\\Core.c --setup D:\\2026cumcm\\codes\\lean_formalization\\.lake\\build\\ir\\Renzheng\\Core.setup.json --json",
+   "level": "trace"},
+  {"message":
+   "Renzheng/Core.lean:99:26: `Set.mem_setOf_eq` has been deprecated: Use `Set.mem_ofPred_eq` instead",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:105:26: `Set.mem_setOf_eq` has been deprecated: Use `Set.mem_ofPred_eq` instead",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:134:35: Variable name `i` is not explicitly referenced.\n\nHint: The binding can be removed (if unused) or named `_` (if used implicitly). Alternatively, prefix the name with `_` to silence this warning:\n  [apply] _i\n\nNote: This linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:204:50: This simp argument is unused:\n  Complex.sub_re\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [ω, Complex.zero_re, Complex.zero_im, Complex.sub_im]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:204:66: This simp argument is unused:\n  Complex.sub_im\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [ω, Complex.zero_re, Complex.zero_im, Complex.sub_re]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:211:48: This simp argument is unused:\n  Complex.sub_re\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [ω, Complex.one_re, Complex.one_im, Complex.sub_im, Complex.zero_re, Complex.zero_im]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:211:64: This simp argument is unused:\n  Complex.sub_im\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [ω, Complex.one_re, Complex.one_im, Complex.sub_re, Complex.zero_re, Complex.zero_im]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:212:4: This simp argument is unused:\n  Complex.zero_re\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [ω, Complex.one_re, Complex.one_im, Complex.sub_re, Complex.sub_im, Complex.zero_im]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:212:21: This simp argument is unused:\n  Complex.zero_im\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [ω, Complex.one_re, Complex.one_im, Complex.sub_re, Complex.sub_im, Complex.zero_re]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:330:47: This simp argument is unused:\n  Complex.sub_re\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [Complex.zero_re, Complex.zero_im, Complex.sub_im, Complex.I_re, Complex.I_im]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:330:63: This simp argument is unused:\n  Complex.sub_im\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [Complex.zero_re, Complex.zero_im, Complex.sub_re, Complex.I_re, Complex.I_im]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:355:15: `Set.mem_setOf_eq` has been deprecated: Use `Set.mem_ofPred_eq` instead",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:363:28: `Set.mem_setOf_eq` has been deprecated: Use `Set.mem_ofPred_eq` instead",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:363:28: `Set.mem_setOf_eq` has been deprecated: Use `Set.mem_ofPred_eq` instead",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:363:28: `Set.mem_setOf_eq` has been deprecated: Use `Set.mem_ofPred_eq` instead",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:380:15: `Set.mem_setOf_eq` has been deprecated: Use `Set.mem_ofPred_eq` instead",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:373:33: This simp argument is unused:\n  Complex.sub_re\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [down_re, down_im, Complex.sub_im, Complex.zero_re, Complex.zero_im]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:373:49: This simp argument is unused:\n  Complex.sub_im\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [down_re, down_im, Complex.sub_re, Complex.zero_re, Complex.zero_im]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:525:48: Variable name `h2` is not explicitly referenced.\n\nHint: The binding can be removed (if unused) or named `_` (if used implicitly). Alternatively, prefix the name with `_` to silence this warning:\n  [apply] _h2\n\nNote: This linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:626:2: `push_neg` has been deprecated. Prefer using `push Not` instead.\nIf you'd rather continue using `push_neg` in your project, you can implement it as follows:\n```\nopen Lean.Parser.Tactic in\nmacro \"push_neg\" cfg:optConfig loc:(location)? : tactic =>\n  `(tactic| push $cfg:optConfig Not $[$loc]?)\n```",
+   "level": "warning"},
+  {"message":
+   "Renzheng/Core.lean:623:5: Variable name `hmono` is not explicitly referenced.\n\nHint: The binding can be removed (if unused) or named `_` (if used implicitly). Alternatively, prefix the name with `_` to silence this warning:\n  [apply] _hmono\n\nNote: This linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"}],
+ "inputs":
+ [["deps",
+   [["renzheng/Renzheng:extraDep",
+     [["@renzheng:extraDep", "00000000000006bb"]]],
+    ["imports",
+     [["Mathlib transitive imports (legacy)", "444903ca15e23efa"],
+      ["Mathlib:importAllArts", "c8ea5ed44f948f04"]]]]],
+  ["libs",
+   [["import dynlibs", "00000000000006bb"],
+    ["package external libraries", "00000000000006bb"],
+    ["module dynlibs", "00000000000006bb"],
+    ["module plugins", "00000000000006bb"]]],
+  ["Lean 4.33.0, commit d8b18978322de05a8f3dba51ef03cf5461676c17",
+   "3eca9d16ab6c877d"],
+  ["D:\\2026cumcm\\codes\\lean_formalization\\Renzheng\\Core.lean",
+   "a58fd86cdf48a07e"],
+  ["options", "00000000000006bb"],
+  ["isModule: false", "feefd2a0d3a1847e"],
+  ["Module.name: Renzheng.Core", "9a354eaecfbccaf8"],
+  ["Package.id?: (some renzheng)", "a0d7aa5c1706578b"],
+  ["Module.leanArgs: #[]", "00000000000006bb"]],
+ "depHash": "bb31824bac1c8320"}

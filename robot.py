@@ -5,6 +5,8 @@
 
     python robot.py --robot-id <参赛队号>                    # 跑模拟器（演练/正式测试）
     python robot.py --robot-id demo --dry-run --cases 20     # 离线自测，不联网
+    python robot.py --robot-id demo --dry-run --problem 4 \
+           --seeds 27880,1031                                # 只跑指定的几个种子（可写 1-5 区间）
     python robot.py --robot-id demo --dry-run --algorithm p3-baseline \
            --params '{"ring_r":1200}'                        # 指定算法与参数
 
@@ -27,6 +29,7 @@ import json
 
 import algorithms
 from sim_client import BASE_URL, SimulatorClient
+from trace_client import parse_seeds
 
 # 向后兼容：老代码里的 `from robot import InterferenceHunter` 仍然可用。
 from algorithms.p3_baseline import InterferenceHunter  # noqa: F401
@@ -53,6 +56,18 @@ def build_hunter(sim, args, verbose: bool = False):
     return algorithms.build_algorithm(algorithm_id, sim, params, verbose=verbose)
 
 
+def _seed_list(args) -> list[int]:
+    """本次离线自测要跑的种子列表。
+
+    给了 `--seeds`（自定义种子）就以它为准，否则按老规矩从 `--seed` 起连跑
+    `--cases` 个。两个题目（`--problem 3/4`）用的是同一套写法。
+    """
+    raw = (getattr(args, "seeds", "") or "").strip()
+    if raw:
+        return parse_seeds(raw)
+    return [args.seed + i for i in range(max(int(args.cases), 0))]
+
+
 # ================================================================== 离线自测
 def run_dry_run(args) -> int:
     """用本地模拟环境自测策略，统计"清除比例"与"平均定位清除时间"。
@@ -75,9 +90,20 @@ def run_dry_run(args) -> int:
     print(f"离线题目：第{args.problem}题    算法：{spec.name}（{spec.id} · {spec.problem}）"
           f"    参数覆盖：{params if params else '（用默认值）'}")
 
+    try:
+        seeds = _seed_list(args)
+    except ValueError as exc:
+        print(f"[错误] --seeds 解析失败：{exc}")
+        return 2
+    if not seeds:
+        print("[错误] 没有要跑的种子：--cases 至少给 1，或用 --seeds 指定自定义种子。")
+        return 2
+    if (getattr(args, "seeds", "") or "").strip():
+        head = ", ".join(str(s) for s in seeds[:20])
+        print(f"自定义种子（{len(seeds)} 个）：{head}{' …' if len(seeds) > 20 else ''}")
+
     rows = []
-    for case in range(args.cases):
-        seed = args.seed + case
+    for case, seed in enumerate(seeds):
         arena = MockArena(seed=seed, problem=args.problem)
         hunter = algorithms.build_algorithm(algorithm_id, arena, params,
                                             verbose=not args.quiet)
@@ -85,7 +111,7 @@ def run_dry_run(args) -> int:
         total = arena.n_sources
         rows.append((seed, total, stats["cleared"], stats["平均定位清除时间"],
                      stats["虚拟总时间"], stats["measure次数"], stats["clear次数"]))
-        print(f"[案例 {case + 1:2d}] seed={seed:5d}  干扰源 {total:2d} 个  "
+        print(f"[案例 {case + 1:2d}/{len(seeds):2d}] seed={seed:5d}  干扰源 {total:2d} 个  "
               f"清除 {stats['cleared']:2d} 个 ({stats['cleared'] / total:6.1%})  "
               f"平均定位清除时间 {stats['平均定位清除时间']:7.1f} s  "
               f"虚拟总时间 {stats['虚拟总时间']:7.1f} s  "
@@ -113,6 +139,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dry-run", action="store_true", help="离线自测，不连接模拟器")
     p.add_argument("--cases", type=int, default=10, help="离线自测的案例数")
     p.add_argument("--seed", type=int, default=1, help="离线自测的随机种子起点")
+    p.add_argument("--seeds", default="",
+                   help="离线自测的自定义种子：逗号/空格分隔，支持区间 "
+                        "(例：--seeds 27880,1031 或 --seeds 1-5)；"
+                        "给了它就忽略 --seed/--cases，第三题第四题通用")
     p.add_argument("--problem", type=int, default=3, choices=(3, 4),
                    help="离线自测的题目：3 = 全全向源（默认），4 = 全向 + 定向混合")
     p.add_argument("--quiet", action="store_true", help="不逐条打印请求/响应")
@@ -124,6 +154,10 @@ def parse_args() -> argparse.Namespace:
                    help="算法 id（见 algorithms/README.md），缺省用注册表的默认算法")
     p.add_argument("--params", default="",
                    help='算法参数 JSON，覆盖默认值，例如 --params \'{"ring_r":1200}\'')
+    p.add_argument("--case-code", default="",
+                   help="模拟器界面上显示的『测试案例编码』。接口不返回它，"
+                        "传进来会写进 logs/robot-*.jsonl 的第一行，方便把表 1 "
+                        "那一列和日志文件对上（不传则留空，事后手抄也行）")
     return p.parse_args()
 
 
@@ -131,10 +165,19 @@ def main() -> int:
     args = parse_args()
     if args.dry_run:
         return run_dry_run(args)
+    # 先把算法信息算出来塞进日志 meta：正式测试的日志事后要能对上"这局用的哪套算法"。
+    try:
+        _algo_id, _algo_params = _algorithm_choice(args)
+        extra_meta = {"algorithm": _algo_id, "params": _algo_params,
+                      "problem": args.problem}
+    except ValueError:
+        extra_meta = {}
     try:
         with SimulatorClient(args.robot_id, args.url,
                              log_dir=(args.log_dir or None),
-                             verbose=not args.quiet) as raw:
+                             verbose=not args.quiet,
+                             case_code=getattr(args, "case_code", ""),
+                             extra_meta=extra_meta) as raw:
             sim = raw
             tracer = None
             if args.trace:

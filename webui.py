@@ -31,6 +31,7 @@ from urllib.parse import parse_qs, urlparse
 import trace_client
 import algorithms
 from step_gate import StepGate, load_debug_config
+from trace_client import parse_seeds
 
 ROOT = Path(__file__).resolve().parent
 HTML_PATH = ROOT / "webui.html"
@@ -39,6 +40,8 @@ CONFIG_PATH = ROOT / "config.json"
 STATE = {
     "trace_dir": Path("traces"),
     "running": None,          # 正在跑的任务（trace 文件名）
+    "batch": None,            # 自定义种子连跑时的进度 {names, index, total, current}
+    "batch_seq": 0,           # 连跑批次的编号（网页靠它认领自己那一批）
     "error": None,
     "gate": None,             # StepGate
     "current": None,          # 当前正在看的 trace 名
@@ -188,7 +191,8 @@ def read_trace(name: str, since: int = 0) -> dict:
 def gate_payload() -> dict:
     gate = STATE["gate"]
     return {"gate": gate.state() if gate else None,
-            "running": STATE["running"], "error": STATE["error"]}
+            "running": STATE["running"], "error": STATE["error"],
+            "batch": STATE["batch"]}
 
 
 def poll_payload(name: str = "", since: int = 0) -> dict:
@@ -211,7 +215,7 @@ def poll_payload(name: str = "", since: int = 0) -> dict:
 def run_blocking(mode: str, name: str, *, seed: int | None = None, robot_id: str = "",
                  url: str = "http://127.0.0.1:2026", log_dir: str = "logs",
                  algorithm: str = "", params: dict | None = None,
-                 problem: int = 3) -> dict | None:
+                 problem: int = 3, case_code: str = "") -> dict | None:
     """同步跑一局并登记状态（在后台线程里调用）。"""
     with STATE["lock"]:
         STATE["running"] = name
@@ -220,7 +224,8 @@ def run_blocking(mode: str, name: str, *, seed: int | None = None, robot_id: str
         return trace_client.run_session(
             mode=mode, out=STATE["trace_dir"] / name, seed=seed,
             robot_id=robot_id, url=url, log_dir=log_dir, gate=STATE["gate"],
-            algorithm=algorithm, params=params, problem=problem)
+            algorithm=algorithm, params=params, problem=problem,
+            case_code=case_code)
     except Exception as exc:                          # noqa: BLE001
         STATE["error"] = f"{type(exc).__name__}: {exc}"
         print(f"[webui] {mode} 运行结束：", exc)
@@ -233,23 +238,77 @@ def run_blocking(mode: str, name: str, *, seed: int | None = None, robot_id: str
 def start_run(mode: str, *, seed: int | None = None, robot_id: str = "",
               url: str = "http://127.0.0.1:2026", log_dir: str = "logs",
               algorithm: str = "", params: dict | None = None,
-              problem: int = 3) -> str:
+              problem: int = 3, case_code: str = "") -> str:
     """后台跑一局（离线 mock 或实机），返回 trace 文件名。
 
     `problem` 只影响离线 mock（3 = 全全向源，4 = 全向 + 定向混合）；实机一局仍然写
-    `live.jsonl`，参数一个都不多传。
+    `live-<日期>-<时刻>.jsonl`，参数一个都不多传。
+
+    实机 trace 的文件名带时间戳（不是固定的 `live.jsonl`）——问题 3/问题 4 各有三次
+    正式测试，固定文件名会让后一局**覆盖**前一局，支撑材料要的三条指令序列就只剩
+    最后一条了。带时间戳的写法每次都是一份新文件，网页按返回的名字轮询，不受影响。
     """
-    name = (f"mock-p{4 if problem == 4 else 3}-seed{seed}.jsonl" if mode == "mock"
-            else "live.jsonl")
+    if mode == "mock":
+        name = mock_name(problem, seed)
+    else:
+        from sim_client import safe_tag
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        tag = safe_tag(case_code)
+        name = f"live-{stamp}{f'-{tag}' if tag else ''}.jsonl"
     with STATE["lock"]:
         if STATE["running"]:
             return STATE["running"]
     threading.Thread(target=lambda: run_blocking(mode, name, seed=seed, robot_id=robot_id,
                                                  url=url, log_dir=log_dir,
                                                  algorithm=algorithm, params=params,
-                                                 problem=problem),
+                                                 problem=problem, case_code=case_code),
                      daemon=True).start()
     return name
+
+
+def mock_name(problem: int, seed) -> str:
+    """离线一局的 trace 文件名（自定义种子也走这套命名，可被覆盖重跑）。"""
+    return f"mock-p{4 if problem == 4 else 3}-seed{seed}.jsonl"
+
+
+def start_batch(jobs: list[tuple[int, int]], *, algorithm: str = "",
+                params: dict | None = None,
+                log_dir: str = "logs") -> tuple[list[str], int | None]:
+    """按 (题目, 种子) 列表**串行**连跑若干局，返回 (每局的 trace 文件名, 批次号)。
+
+    为什么串行：调试闸门（每步延迟 / 断点单步）是全局的，并发跑会让人不知道该放行
+    哪一局；串行还保证 trace 写入与网页轮询的次序稳定。进度写在 `STATE["batch"]`，
+    随 `/api/gate`、`/api/poll`、`/api/stream` 一起推给网页，状态栏显示"第 k/n 局"。
+
+    批次号在**调用方线程里**就写好（不是等后台线程起来才写），这样网页 POST 完立刻
+    查进度也不会读到上一批的残留。已经在跑别的任务时返回 `([], None)`，不排队、不打断。
+    """
+    names = [mock_name(problem, seed) for (problem, seed) in jobs]
+    if not names:
+        return [], None
+    total = len(jobs)
+    with STATE["lock"]:
+        if STATE["running"]:
+            return [], None
+        STATE["batch_seq"] += 1
+        token = STATE["batch_seq"]
+        STATE["batch"] = {"token": token, "names": list(names), "index": 0,
+                          "total": total, "current": names[0]}
+
+    def set_progress(index: int, current: str | None) -> None:
+        with STATE["lock"]:
+            STATE["batch"] = {"token": token, "names": list(names), "index": index,
+                              "total": total, "current": current}
+
+    def job() -> None:
+        for i, ((problem, seed), name) in enumerate(zip(jobs, names)):
+            set_progress(i, name)
+            run_blocking("mock", name, seed=seed, algorithm=algorithm, params=params,
+                         problem=problem, log_dir=log_dir)
+            set_progress(i + 1, None)
+
+    threading.Thread(target=job, daemon=True).start()
+    return names, token
 
 
 def algo_payload() -> dict:
@@ -269,6 +328,26 @@ def problem_of(body: dict) -> int:
     except (TypeError, ValueError):
         return 3
     return 4 if value == 4 else 3
+
+
+def problem_list(body: dict) -> list[int]:
+    """这次请求要跑哪几个题目：单个 `problem`，或 `problems=[3,4]`（两题连跑）。
+
+    返回去重保序后的列表（元素只可能是 3 或 4）；没给就是 [3]（与旧行为一致）。
+    """
+    raw = body.get("problems")
+    if isinstance(raw, (list, tuple)):
+        out: list[int] = []
+        for item in raw:
+            try:
+                p = 4 if int(item) == 4 else 3
+            except (TypeError, ValueError):
+                continue
+            if p not in out:
+                out.append(p)
+        if out:
+            return out
+    return [problem_of(body)]
 
 
 def _int_arg(query: dict, key: str, default: int = 0) -> int:
@@ -384,19 +463,26 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(u.query)
         body = self._body()
         if u.path == "/api/new":
-            raw = (q.get("seed") or ["0"])[0]
+            raw = (q.get("seed") or q.get("seeds") or [""])[0]
             try:
-                seed = int(raw)
-            except ValueError:
-                seed = 0
-            if seed <= 0:
-                seed = int(time.time()) % 100000
-            problem = problem_of(body)
-            self._json({"name": start_run("mock", seed=seed,
-                                          algorithm=body.get("algorithm", ""),
-                                          params=body.get("params") or None,
-                                          problem=problem),
-                        "seed": seed, "problem": problem})
+                seeds = parse_seeds(raw)
+            except ValueError as exc:
+                self._send(400, f"种子写法有误：{exc}".encode("utf-8"),
+                           "text/plain; charset=utf-8")
+                return
+            if not seeds or seeds == [0]:       # 留空或 0 = 随机一个（与以前一致）
+                seeds = [int(time.time()) % 100000]
+            problems = problem_list(body)
+            algorithm = body.get("algorithm", "")
+            params = body.get("params") or None
+            # 一局也好、两题×多个种子也好，都走同一条排队路径：
+            # 这样网页永远能用 /api/gate 的 batch 进度认领自己这批。
+            names, token = start_batch([(p, s) for p in problems for s in seeds],
+                                       algorithm=algorithm, params=params,
+                                       log_dir=STATE.get("log_dir", "logs"))
+            self._json({"name": names[0] if names else "", "names": names, "seeds": seeds,
+                        "problems": problems, "count": len(names), "token": token,
+                        "seed": seeds[0], "problem": problems[0]})
         elif u.path == "/api/run":
             mode = body.get("mode", "mock")
             if mode == "live" and not body.get("robot_id"):
@@ -411,8 +497,9 @@ class Handler(BaseHTTPRequestHandler):
                              log_dir=STATE.get("log_dir", "logs"),
                              algorithm=body.get("algorithm", ""),
                              params=body.get("params") or None,
+                             case_code=(body.get("case_code") or "").strip(),
                              **extra)
-            self._json({"name": name})
+            self._json({"name": name, "case_code": (body.get("case_code") or "").strip()})
         elif u.path == "/api/gate/step":
             gate = STATE["gate"]
             self._json({"ok": bool(gate and gate.release("manual"))})
@@ -460,6 +547,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--serve-only", action="store_true", help="只提供已有 trace 的可视化")
     p.add_argument("--cases", type=int, default=3, help="--demo 生成几个案例")
     p.add_argument("--seed", type=int, default=1, help="--demo 的起始随机种子")
+    p.add_argument("--seeds", default="",
+                   help="--demo 的自定义种子：逗号/空格分隔，支持区间（例：27880,1031 "
+                        "或 1-5）；给了它就忽略 --seed/--cases")
     p.add_argument("--problem", type=int, default=3, choices=(3, 4),
                    help="离线案例的题目：3 = 全全向源（默认），4 = 全向 + 定向混合")
     p.add_argument("--robot-id", default="", help="--run 时必填")
@@ -509,12 +599,22 @@ def main() -> int:
              "开" if dbg["delay"]["enabled"] else "关"))
 
     if args.demo:
+        try:
+            demo_seeds = parse_seeds(args.seeds) if args.seeds.strip() else None
+        except ValueError as exc:
+            print(f"--seeds 解析失败：{exc}")
+            return 2
+        if demo_seeds is not None and not demo_seeds:
+            print("--seeds 是空的：请写具体种子，例如 --seeds 27880,1031")
+            return 2
+
         def demo_job() -> None:
             time.sleep(0.8)                     # 先把网页放出来，断点才有地方点
-            for i in range(args.cases):
-                seed = args.seed + i
+            seeds = demo_seeds if demo_seeds is not None else [
+                args.seed + i for i in range(max(int(args.cases), 0))]
+            for i, seed in enumerate(seeds):
                 name = f"mock-p{args.problem}-seed{seed}.jsonl"
-                print(f"[demo {i + 1}/{args.cases}] 生成 {name} ...")
+                print(f"[demo {i + 1}/{len(seeds)}] 生成 {name} ...")
                 stats = run_blocking("mock", name, seed=seed, algorithm=cli_algo,
                                      params=cli_params, problem=args.problem)
                 if stats:

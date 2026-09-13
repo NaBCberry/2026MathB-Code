@@ -1,0 +1,152 @@
+[
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CAPJ&tablename=CAPJLAST&filename=XTYD2026090400C&fileSourceType=1",
+  "t": "基于布局优化和梯度搜索的TDOA定位系统",
+  "q": "SU=('无源定位'+'测向交叉定位'+'方位角定位')*('精度'+'几何精度因子'+'GDOP')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CAPJ&tablename=CAPJLAST&filename=XDFJ20260901002&fileSourceType=1",
+  "t": "多帧运动双站TDOA/FDOA无源定位精度分析",
+  "q": "SU=('无源定位'+'测向交叉定位'+'方位角定位')*('精度'+'几何精度因子'+'GDOP')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDAUTO&filename=YSGY202617017&fileSourceType=1",
+  "t": "攻克定位难题 诠释“中国精度”——索尔德以无源定位技术助力有色行业数智化转型纪实",
+  "q": "SU=('无源定位'+'测向交叉定位'+'方位角定位')*('精度'+'几何精度因子'+'GDOP')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CAPJ&tablename=CAPJLAST&filename=NJYD20260818004&fileSourceType=1",
+  "t": "基于费舍尔信息矩阵的单站移动时频感知信号源盲定位算法",
+  "q": "SU=('无源定位'+'测向交叉定位'+'方位角定位')*('精度'+'几何精度因子'+'GDOP')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CAPJ&tablename=CAPJLAST&filename=DZIY2026071700F&fileSourceType=1",
+  "t": "基于精英引导与透镜成像改进HHO的三维无源TDOA定位方法",
+  "q": "SU=('无源定位'+'测向交叉定位'+'方位角定位')*('精度'+'几何精度因子'+'GDOP')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CAPJ&tablename=CAPJLAST&filename=XDLD20260723003&fileSourceType=1",
+  "t": "基于CRLB准则的变速无人机群目标无源定位路径优化",
+  "q": "SU=('无源定位'+'测向交叉定位'+'方位角定位')*('精度'+'几何精度因子'+'GDOP')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2026&filename=XDDJ202605008&fileSourceType=1",
+  "t": "多站测向交叉定位的定位精度研究",
+  "q": "SU=('测向交叉定位'+'交叉定位'+'交会定位')*('布站'+'观测站'+'布局优化'+'传感器布局')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2024&filename=XDLD202407011&fileSourceType=1",
+  "t": "多机动站交叉定位系统精度分析及优化",
+  "q": "SU=('测向交叉定位'+'交叉定位'+'交会定位')*('布站'+'观测站'+'布局优化'+'传感器布局')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CMFD&tablename=CMFD202502&filename=1025244055.nh&fileSourceType=1",
+  "t": "多站无源交叉定位及优化技术研究",
+  "q": "SU=('测向交叉定位'+'交叉定位'+'交会定位')*('布站'+'观测站'+'布局优化'+'传感器布局')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2024&filename=IKJS202406011&fileSourceType=1",
+  "t": "基于MLE的靶场光电经纬仪高精度定位方法研究",
+  "q": "SU=('测向交叉定位'+'交叉定位'+'交会定位')*('布站'+'观测站'+'布局优化'+'传感器布局')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2024&filename=WXHK202406022&fileSourceType=1",
+  "t": "一种基于多舰协同侦察的优化布站方法",
+  "q": "SU=('测向交叉定位'+'交叉定位'+'交会定位')*('布站'+'观测站'+'布局优化'+'传感器布局')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2023&filename=JCGC202307009&fileSourceType=1",
+  "t": "对空观察哨双站测向交叉定位误差分析与验证",
+  "q": "SU=('测向交叉定位'+'交叉定位'+'交会定位')*('布站'+'观测站'+'布局优化'+'传感器布局')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CAPJ&tablename=CAPJLAST&filename=SCLH20260828002&fileSourceType=1",
+  "t": "室内动态环境下多传感器融合全覆盖路径规划设计与实现",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDAUTO&filename=DLXZ202608028&fileSourceType=1",
+  "t": "改进GA算法的全局覆盖路径规划方法研究",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDAUTO&filename=YLJS202604011&fileSourceType=1",
+  "t": "基于AMDQN的AUV遍历路径规划方法",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CAPJ&tablename=CAPJLAST&filename=SHJT20260805009&fileSourceType=1",
+  "t": "基于表面曲率的复杂工件双目视觉检测视点规划",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDAUTO&filename=DLXZ202607027&fileSourceType=1",
+  "t": "基于单元分解和MTSP的多无人清扫车全覆盖路径规划",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2026&filename=JIQI202604005&fileSourceType=1",
+  "t": "基于局部地图重构的机器人动态全覆盖路径优化方法及其项目式教学实践",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2026&filename=ZGXJ202606007&fileSourceType=1",
+  "t": "基于场景图谱与图神经网络的室内移动机器人导航算法",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CAPJ&tablename=CAPJLAST&filename=KZYC20260529004&fileSourceType=1",
+  "t": "基于多模态大模型推理的无人机未知环境目标搜索",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2026&filename=XDDJ202610022&fileSourceType=1",
+  "t": "基于LLM引导的水电机组内膛检修目标搜索策略",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CMFD&tablename=CMFDTEMPDAY&filename=1026471864.nh&fileSourceType=1",
+  "t": "应急场景下无人机通信系统的任务年龄与安全性优化研究",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CAPJ&tablename=CAPJLAST&filename=XTYD20260421004&fileSourceType=1",
+  "t": "基于改进CCGA的岸基无源传感器协同运用优化方法",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CAPJ&tablename=CAPJLAST&filename=FKTC20260414001&fileSourceType=1",
+  "t": "面向水面目标搜索的无人机-无人艇集群编队控制方法",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CAPJ&tablename=CAPJLAST&filename=JCZG20260810002&fileSourceType=1",
+  "t": "基于改进双向混合A*算法的船舶靠泊路径规划方法研究",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2026&filename=JYRJ202606033&fileSourceType=1",
+  "t": "一种改进的有界次优双向搜索A*算法",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2026&filename=CGGL202604002&fileSourceType=1",
+  "t": "改进双向A*算法的碰撞规避路径规划研究",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2026&filename=BIGO202601002&fileSourceType=1",
+  "t": "面向未知环境的多无人机自主目标搜索算法",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CDFD&tablename=CDFDLAST2026&filename=1026262212.nh&fileSourceType=1",
+  "t": "机载雷达空中目标搜索与分辨探测方法研究",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ },
+ {
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2025&filename=MMXB202504010&fileSourceType=1",
+  "t": "顺序编码方法优化与SAT搜索应用",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ }
+]

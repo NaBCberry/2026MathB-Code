@@ -1,0 +1,212 @@
+[
+ {
+  "cited": "254",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2017&filename=JZDF201707031&fileSourceType=1",
+  "t": "路径规划算法的研究与发展",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "cited": "183",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2021&filename=NYJX202109001&fileSourceType=1",
+  "t": "农业机械导航路径规划研究进展",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "cited": "154",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2000&filename=XXWX200005010&fileSourceType=1",
+  "t": "Web日志挖掘中的序列模式识别",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "cited": "152",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2001&filename=XAJT200106018&fileSourceType=1",
+  "t": "Web日志中挖掘用户浏览模式的研究",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "cited": "134",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2022&filename=NYJX2022S1001&fileSourceType=1",
+  "t": "农业机器人全覆盖作业规划研究进展",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "cited": "121",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2016&filename=HKXB201603019&fileSourceType=1",
+  "t": "多无人机协同覆盖路径规划",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "cited": "117",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2007&filename=JSYJ200710015&fileSourceType=1",
+  "t": "基于栅格地图的机器人覆盖路径规划研究",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "cited": "103",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2006&filename=JQRR200606006&fileSourceType=1",
+  "t": "不确定动态环境下移动机器人的完全遍历路径规划",
+  "q": "SU=('全覆盖路径规划'+'覆盖路径规划'+'遍历路径')*('栅格'+'单元分解'+'牛耕'+'螺旋'+'算法')"
+ },
+ {
+  "cited": "154",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2020&filename=KZYC202010028&fileSourceType=1",
+  "t": "基于子目标搜索的机器人目标导向RRT路径规划算法",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "cited": "125",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2010&filename=HKXB201003029&fileSourceType=1",
+  "t": "基于分布式模型预测控制的多UAV协同区域搜索",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "cited": "86",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CDFD&tablename=CDFDLAST2018&filename=1018074794.nh&fileSourceType=1",
+  "t": "多AUV编队控制与协同搜索技术研究",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "cited": "81",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2014&filename=MOTO201407014&fileSourceType=1",
+  "t": "基于MTPM和DPM的多无人机协同广域目标搜索滚动时域决策",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "cited": "77",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2016&filename=XTYD201604016&fileSourceType=1",
+  "t": "不确定环境下多无人机协同区域搜索算法",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "cited": "73",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2009&filename=GFKJ200905018&fileSourceType=1",
+  "t": "区域目标搜索中基于改进RRT的UAV实时航迹规划",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "cited": "67",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2017&filename=XTYD201709013&fileSourceType=1",
+  "t": "带信息素回访机制的多无人机分布式协同目标搜索",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "cited": "57",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2019&filename=BJHK201902016&fileSourceType=1",
+  "t": "未知环境下无人机集群协同区域搜索算法",
+  "q": "SU=('目标搜索'+'区域搜索')*('移动机器人'+'无人机'+'多智能体'+'协同')"
+ },
+ {
+  "cited": "210",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2019&filename=JSGG201921032&fileSourceType=1",
+  "t": "基于改进A*算法的移动机器人路径规划研究",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ },
+ {
+  "cited": "75",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CDFD&tablename=CDFD0911&filename=2008098675.nh&fileSourceType=1",
+  "t": "弹道导弹防御跟踪制导雷达探测技术研究",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ },
+ {
+  "cited": "70",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CDFD&tablename=CDFD1214&filename=1012261151.nh&fileSourceType=1",
+  "t": "海上搜救决策支持系统关键技术的研究",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ },
+ {
+  "cited": "58",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2004&filename=XTYD200410017&fileSourceType=1",
+  "t": "相控阵雷达资源受限时最优搜索性能研究",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ },
+ {
+  "cited": "55",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2012&filename=XAGY201204021&fileSourceType=1",
+  "t": "A*路径规划算法的改进及实现",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ },
+ {
+  "cited": "51",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2006&filename=ZGDC200622015&fileSourceType=1",
+  "t": "一种永磁球形步进电机转子位置的检测方法",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ },
+ {
+  "cited": "47",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2022&filename=JSGG202206035&fileSourceType=1",
+  "t": "目标偏置双向RRT*算法的机器人路径规划",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ },
+ {
+  "cited": "44",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2011&filename=YHXB201109021&fileSourceType=1",
+  "t": "机载相控阵雷达射频隐身时最优搜索性能研究",
+  "q": "SU=('搜索论'+'最优搜索'+'搜索理论')*('发现概率'+'搜索时间'+'检测概率'+'资源分配')"
+ },
+ {
+  "cited": "555",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2000&filename=KZLY200001000&fileSourceType=1",
+  "t": "自适应蚁群算法",
+  "q": "SU=('旅行商问题'+'TSP'+'访问顺序'+'路径优化')*('动态规划'+'精确算法'+'启发式'+'分支定界')"
+ },
+ {
+  "cited": "419",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CDFD&tablename=CDFD9908&filename=2008028650.nh&fileSourceType=1",
+  "t": "蚁群算法及其应用研究",
+  "q": "SU=('旅行商问题'+'TSP'+'访问顺序'+'路径优化')*('动态规划'+'精确算法'+'启发式'+'分支定界')"
+ },
+ {
+  "cited": "360",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2019&filename=JSGG201902041&fileSourceType=1",
+  "t": "生鲜农产品冷链物流低碳配送路径优化研究",
+  "q": "SU=('旅行商问题'+'TSP'+'访问顺序'+'路径优化')*('动态规划'+'精确算法'+'启发式'+'分支定界')"
+ },
+ {
+  "cited": "343",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2019&filename=KZLY201910001&fileSourceType=1",
+  "t": "车辆路径优化问题及求解方法研究综述",
+  "q": "SU=('旅行商问题'+'TSP'+'访问顺序'+'路径优化')*('动态规划'+'精确算法'+'启发式'+'分支定界')"
+ },
+ {
+  "cited": "252",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD9495&filename=XNJT504.003&fileSourceType=1",
+  "t": "车辆优化调度问题的研究现状评述",
+  "q": "SU=('旅行商问题'+'TSP'+'访问顺序'+'路径优化')*('动态规划'+'精确算法'+'启发式'+'分支定界')"
+ },
+ {
+  "cited": "233",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2015&filename=ZGGK201509012&fileSourceType=1",
+  "t": "电动汽车物流配送系统的换电站选址与路径优化问题研究",
+  "q": "SU=('旅行商问题'+'TSP'+'访问顺序'+'路径优化')*('动态规划'+'精确算法'+'启发式'+'分支定界')"
+ },
+ {
+  "cited": "230",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2017&filename=ZGGK2016S1026&fileSourceType=1",
+  "t": "基于时间满意度的O2O外卖配送路径优化问题研究",
+  "q": "SU=('旅行商问题'+'TSP'+'访问顺序'+'路径优化')*('动态规划'+'精确算法'+'启发式'+'分支定界')"
+ },
+ {
+  "cited": "225",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD9697&filename=GCXT199605009&fileSourceType=1",
+  "t": "有时间窗的车辆路线安排问题的启发式算法",
+  "q": "SU=('旅行商问题'+'TSP'+'访问顺序'+'路径优化')*('动态规划'+'精确算法'+'启发式'+'分支定界')"
+ },
+ {
+  "cited": "112",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2007&filename=XTFZ200711021&fileSourceType=1",
+  "t": "多UAV协同区域覆盖搜索研究",
+  "q": "SU=('全覆盖路径规划'+'区域覆盖'+'覆盖路径规划')*('移动机器人'+'机器人'+'无人机')"
+ },
+ {
+  "cited": "101",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFD2014&filename=JSJY201410018&fileSourceType=1",
+  "t": "移动机器人全局覆盖路径规划算法研究进展与展望",
+  "q": "SU=('全覆盖路径规划'+'区域覆盖'+'覆盖路径规划')*('移动机器人'+'机器人'+'无人机')"
+ },
+ {
+  "cited": "99",
+  "href": "https://ix.cnki.net/read/article/readonline?appid=CRSP_BASIC_PSMC&dbcode=CJFD&tablename=CJFDLAST2016&filename=JZCK201610002&fileSourceType=1",
+  "t": "智能机械全覆盖路径规划算法综述",
+  "q": "SU=('全覆盖路径规划'+'区域覆盖'+'覆盖路径规划')*('移动机器人'+'机器人'+'无人机')"
+ }
+]

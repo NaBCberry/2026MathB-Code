@@ -113,7 +113,8 @@
   <h1>干扰源自动定位清除 · 可视化</h1>
   <select id="sel" title="选择 trace"></select>
   <button id="reload">刷新</button>
-  <button class="primary" id="newsample">生成新案例</button>
+  <button class="primary" id="newsample"
+          title="用调试控制台里填的「种子」跑；留空 = 随机">生成新案例</button>
   <label class="ck"><input type="checkbox" id="live" checked> 自动刷新</label>
   <label class="ck"><input type="checkbox" id="onlysig"> 只看有信号/清除的行</label>
   <span class="grow"></span>
@@ -131,10 +132,15 @@
     <div class="body dbg">
       <div class="dbgrow">
         <label>离线题目 <select id="offlineProblem"
-               title="只影响离线案例（生成新案例 / 离线案例两个按钮）；实机运行不受影响">
+               title="只影响离线案例（生成新案例 / 离线案例两个按钮）；实机运行不受影响。
+选“两题连跑”会把同一个自定义种子在第三题、第四题上各跑一遍">
           <option value="3">第三题（全向源）</option>
           <option value="4">第四题（全向+定向）</option>
+          <option value="0">第三题 + 第四题（同种子连跑）</option>
         </select></label>
+        <label>种子 <input id="seedInput" style="width:230px"
+               placeholder="留空=随机；27880 或 27880,1031 或 1-5"
+               title="逗号/空格分隔，可用闭区间写法；第三题第四题通用"></label>
         <label>算法 <select id="algo" title="选择要跑的算法/题目"></select></label>
         <label>参数 <input id="algoParams" placeholder='{"ring_r":1200}' style="width:280px"></label>
         <button id="algoReset">恢复默认参数</button>
@@ -163,6 +169,15 @@
         <button id="dbgAbort">中止运行</button>
         <span class="sep"></span>
         <label>队号 <input id="runId" placeholder="参赛队号" style="width:150px"></label>
+        <label>实机题目 <select id="liveProblem"
+               title="只用于「算法与本局题目是否匹配」的提醒（实机请求本身不传题目字段）。
+正式测试每局只有 3 次机会，选错算法会白烧一次。">
+          <option value="3">第三题</option>
+          <option value="4" selected>第四题</option>
+        </select></label>
+        <label>案例编码 <input id="caseCode" placeholder="测试案例编码（选填）"
+               style="width:170px"
+               title="模拟器界面上显示的『测试案例编码』。接口不返回它，所以只能手填；填了会写进本局 trace 的 meta 和 logs/robot-*.jsonl 的第一行，用来填论文表 1、并把日志文件对上号。"></label>
         <button id="runLive">实机运行</button>
         <button id="runMock">离线案例</button>
       </div>
@@ -314,6 +329,33 @@ function problemPick(){
   return Number($("offlineProblem").value) === 4 ? 4 : 3;
 }
 
+/* 这次要跑哪几个题目：选了"第三题 + 第四题（同种子连跑）"就是两题。 */
+function problemList(){
+  return Number($("offlineProblem").value) === 0 ? [3, 4] : [problemPick()];
+}
+
+/* 自定义种子：留空 = 随机一个；支持 "27880" / "27880,1031" / "1-5"（后端解析）。 */
+function seedPick(){
+  return ($("seedInput").value || "").trim();
+}
+
+/* 队号记住（每局都一样，别打错）；案例编码**故意不记住**——它每局都不同，
+   沿用上一局的值会把论文表 1 和日志对错号。localStorage 被禁也不影响使用。 */
+function rememberRunFields(){
+  try{
+    localStorage.setItem("cumcm.robotId", $("runId").value.trim());
+    localStorage.setItem("cumcm.liveProblem", $("liveProblem").value);
+  }catch(e){}
+}
+function restoreRunFields(){
+  try{
+    const rid = localStorage.getItem("cumcm.robotId");
+    if(rid && !$("runId").value) $("runId").value = rid;
+    const lp = localStorage.getItem("cumcm.liveProblem");
+    if(lp && $("liveProblem")) $("liveProblem").value = lp;
+  }catch(e){}
+}
+
 async function loadList(){
   const list = await api("/api/traces");
   const sel = $("sel"); sel.innerHTML = "";
@@ -436,6 +478,10 @@ function renderCards(){
      SI.label + (SI.note ? ` · ${SI.note}` : "")],
     ["本局算法", meta.algorithm_name || "—",
      meta.algorithm_problem ? `${meta.algorithm_problem} · ${meta.algorithm || ""}` : ""],
+    ["案例编码", meta.case_code || "—",
+     meta.mode === "live"
+       ? (meta.case_code ? "本局登记（论文表 1 用）" : "未填：请从模拟器日志列表补抄")
+       : "离线案例没有编码"],
   ];
   $("cards").innerHTML = cards.map(c=>
     `<div class="card"><div class="k">${c[0]}</div><div class="v">${c[1]}</div>
@@ -908,6 +954,53 @@ async function gateTick(){
   try{ renderGate(await api("/api/gate")); }catch(_){}
 }
 
+/* ------------------------------------------------- 离线案例：自定义种子连跑 */
+/* 把"自定义种子 + 题目（可两题连跑）"发给后端，返回 {names, token, ...} */
+async function postNewCases(){
+  const pick = algoBody(); if(!pick) return null;
+  const problems = problemList();
+  const seeds = seedPick();
+  const body = Object.assign({problem: problems[0], problems}, pick);
+  const qs = seeds ? "?seed=" + encodeURIComponent(seeds) : "";
+  return await api("/api/new" + qs, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+}
+
+/* 盯住这批连跑：每完成一局就切过去看，全部跑完停在最后一局。
+   靠后端返回的 token 认领自己这批（避免和别人正在跑的那批混淆）。 */
+async function followBatch(r, label){
+  const names = (r && r.names && r.names.length) ? r.names : [];
+  if(!names.length){
+    $("status").textContent = "已有别的任务在跑，本次没有排队";
+    return;
+  }
+  const t0 = Date.now();
+  const isMine = b => !!b && r.token != null && b.token === r.token;
+  let shown = 0;                       // 已经切过去看过的局数
+  const showDone = async k => {        // 第 k 局已完成，切过去看它
+    if(k <= shown) return;
+    shown = k;
+    await loadList();
+    CUR = names[k - 1];
+    $("sel").value = CUR;
+    await loadTrace(CUR);
+  };
+  while(true){
+    let b = null;
+    try{ b = (await api("/api/gate")).batch; }catch(_){}
+    const done = isMine(b) ? b.index : (b == null ? names.length : shown);
+    const secs = Math.round((Date.now() - t0) / 1000);
+    $("status").textContent = done >= names.length
+      ? `${label}：${names.length} 局完成`
+      : `${label}：第 ${done + 1}/${names.length} 局运行中（已完成 ${done}，${secs} s）`;
+    if(done > 0) await showDone(done);
+    if(done >= names.length || Date.now() - t0 > 30*60*1000) break;
+    await new Promise(res => setTimeout(res, 400));
+  }
+  await showDone(names.length);
+  $("status").textContent = `${label}：完成 ${names.length} 局`;
+}
+
 /* ---------------------------------------------------------------- 交互 */
 function bind(){
   $("sel").onchange = e => { CUR = e.target.value; loadTrace(CUR); };
@@ -921,20 +1014,10 @@ function bind(){
   $("algo").onchange = () => selectAlgo($("algo").value);
   $("algoReset").onclick = () => selectAlgo($("algo").value);
   $("newsample").onclick = async () => {
-    const pick = algoBody(); if(!pick) return;
-    const problem = problemPick();
-    $("status").textContent = `正在生成第${problem}题离线案例…`;
-    const r = await api("/api/new?seed="+Math.floor(Math.random()*90000+1),
-      {method:"POST", headers:{"Content-Type":"application/json"},
-       body: JSON.stringify(Object.assign({problem: problem}, pick))});
-    const t0 = Date.now();
-    const wait = setInterval(async ()=>{
-      const list = await loadList();
-      if(list.some(t=>t.name===r.name) || Date.now()-t0>30000){
-        clearInterval(wait); CUR = r.name; $("sel").value = r.name;
-        await loadTrace(CUR); $("status").textContent = "";
-      }
-    }, 500);
+    const label = seedPick() ? "按自定义种子生成" : "生成新案例";
+    $("status").textContent = `${label}…`;
+    const r = await postNewCases();
+    if(r) await followBatch(r, label);
   };
   $("dbgNext").onclick = async ()=>{ await api("/api/gate/step", {method:"POST"}); gateTick(); };
   $("dbgResume").onclick = async ()=>{
@@ -953,22 +1036,36 @@ function bind(){
   $("runLive").onclick = async ()=>{
     const rid = $("runId").value.trim();
     if(!rid){ alert("请先填参赛队号"); return; }
+    const code = $("caseCode").value.trim();
     const pick = algoBody(); if(!pick) return;
+    // 算法与题目匹配检查：正式测试每局只有 3 次机会，选错算法（例如用第三题的
+    // p3-baseline 去跑第四题）会白烧一次，所以这里必须拦一道。
+    const want = Number($("liveProblem").value);
+    const algoProb = ALGO && ALGO.problem ? Number(String(ALGO.problem).replace(/[^0-9]/g, "")) : 0;
+    if(algoProb && algoProb !== want){
+      if(!confirm(`注意：算法与本局题目可能不匹配\n\n`
+          + `本局题目：第${want}题\n`
+          + `当前算法：${ALGO.name}（第${algoProb}题）\n\n`
+          + `第四题必须用第四题的算法（p4- 开头），否则清除比例会明显偏低。\n`
+          + `确定仍要继续吗？`)) return;
+    }
     if(!confirm(`接模拟器跑一局（实机；"离线题目"选择器对本局不生效）：\n`
         + `算法：${ALGO ? ALGO.name : $("algo").value}\n`
-        + `参数：${JSON.stringify(pick.params)}\n确认开始？`)) return;
+        + `参数：${JSON.stringify(pick.params)}\n`
+        + `本局题目：第${want}题\n`
+        + `案例编码：${code || "（未填，日志第一行会留空）"}\n确认开始？`)) return;
+    rememberRunFields();
     const r = await api("/api/run", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify(Object.assign({mode:"live", robot_id:rid}, pick))});
+      body: JSON.stringify(Object.assign({mode:"live", robot_id:rid, case_code:code}, pick))});
+    // 启动成功后清空编码：下一局必须重新填，避免沿用上一局的号。
+    $("caseCode").value = "";
     CUR = r.name; await loadList(); $("sel").value = CUR; gateTick();
   };
   $("runMock").onclick = async ()=>{
-    const pick = algoBody(); if(!pick) return;
-    const problem = problemPick();
-    const r = await api("/api/new?seed="+Math.floor(Math.random()*90000+1),
-      {method:"POST", headers:{"Content-Type":"application/json"},
-       body: JSON.stringify(Object.assign({problem: problem}, pick))});
-    CUR = r.name;
-    setTimeout(async ()=>{ await loadList(); $("sel").value = CUR; await loadTrace(CUR); }, 600);
+    const label = seedPick() ? "离线案例（自定义种子）" : "离线案例";
+    $("status").textContent = `${label}…`;
+    const r = await postNewCases();
+    if(r) await followBatch(r, label);
   };
   ["dbgDelay","dbgBreak","dbgBefore","dbgAfter","dbgEvery","dbgTimeout"].forEach(id=>{
     $(id).onchange = ()=>pushDebug(false);
@@ -977,6 +1074,7 @@ function bind(){
   ["ckTruth","ckGuide","ckEst","onlysig","ckSector","ckRegion"].forEach(id => $(id).onchange = render);
   // 切换离线题目时立刻改画对应的完备性布站（第三题 7 站 / 第四题 25 站）
   $("offlineProblem").onchange = render;
+  restoreRunFields();
   const chanSel = $("ckChan");
   if(chanSel){
     for(const c of CHS){

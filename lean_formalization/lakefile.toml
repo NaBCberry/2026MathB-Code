@@ -1,0 +1,9 @@
+name = "renzheng"
+defaultTargets = ["Renzheng"]
+
+[[require]]
+name = "mathlib"
+path = "_setup/mathlib4"
+
+[[lean_lib]]
+name = "Renzheng"
