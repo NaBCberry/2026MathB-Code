@@ -1,0 +1,4 @@
+# 只有 tools/plot_bench.py、tools/plot_formal.py 这两张图要用到；
+# 跑算法本体（robot.py / webui.py / algorithms/）不需要任何第三方包。
+numpy>=1.26
+matplotlib>=3.8

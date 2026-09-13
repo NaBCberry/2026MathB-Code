@@ -52,3 +52,9 @@ logs/
 traces/
 
 articles/
+
+# ---- 静态网页导出（GitHub Actions / 本地预览用） ----
+site/
+site-test/
+.site-traces/
+out/

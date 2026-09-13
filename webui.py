@@ -35,6 +35,7 @@ from trace_client import parse_seeds
 
 ROOT = Path(__file__).resolve().parent
 HTML_PATH = ROOT / "webui.html"
+STATIC_JS_PATH = ROOT / "webui_static.js"
 CONFIG_PATH = ROOT / "config.json"
 
 STATE = {
@@ -210,6 +211,59 @@ def poll_payload(name: str = "", since: int = 0) -> dict:
         except FileNotFoundError:
             out["trace"] = None
     return out
+
+
+# ---------------------------------------------------------------- 静态导出
+def export_static(out_dir: Path) -> dict:
+    """把 trace 目录导出成"没有后端也能看"的静态网页（GitHub Pages 用）。
+
+    产出：
+
+    * ``index.html``      —— ``webui.html`` 原样，只在主脚本前插一个静态假后端；
+    * ``webui_static.js`` —— 把网页请求的 ``/api/*`` 映射到下面的 JSON，并禁用那几个
+      必须有进程才成立的按钮；
+    * ``api/*.json``      —— 算法清单、trace 清单、闸门状态，以及逐局的 trace。
+
+    静态页能切着看每一局（地图 / 频道表 / 日志 / 汇总 / 算法说明），但"生成新案例 /
+    离线案例 / 实机运行 / 断点单步"这些需要后端的功能用不了。
+    """
+    out = Path(out_dir)
+    api_dir = out / "api"
+    trace_dir = api_dir / "trace"
+    trace_dir.mkdir(parents=True, exist_ok=True)
+
+    if not HTML_PATH.exists():
+        raise FileNotFoundError(HTML_PATH)
+    html = HTML_PATH.read_text(encoding="utf-8")
+    nl = "\r\n" if "\r\n" in html else "\n"
+    if "webui_static.js" not in html:
+        idx = html.rfind("<script>")               # 主脚本是 body 末尾那个
+        if idx < 0:
+            raise RuntimeError("webui.html 里找不到主 <script>，无法注入静态层")
+        html = html[:idx] + f'<script src="webui_static.js"></script>{nl}' + html[idx:]
+    (out / "index.html").write_text(html, encoding="utf-8")
+
+    if not STATIC_JS_PATH.exists():
+        raise FileNotFoundError(STATIC_JS_PATH)
+    (out / "webui_static.js").write_text(STATIC_JS_PATH.read_text(encoding="utf-8"),
+                                         encoding="utf-8")
+
+    def dump(path: Path, obj) -> int:
+        text = json.dumps(obj, ensure_ascii=False)
+        path.write_text(text, encoding="utf-8")
+        return len(text.encode("utf-8"))
+
+    traces = list_traces()
+    size = 0
+    size += dump(api_dir / "algorithms.json", algo_payload())
+    size += dump(api_dir / "traces.json", traces)
+    gate = gate_payload()
+    size += dump(api_dir / "gate.json", gate)
+    size += dump(api_dir / "status.json", {"running": None, "error": None})
+    size += dump(api_dir / "poll.json", dict(gate, trace=None))
+    for item in traces:
+        size += dump(trace_dir / f"{item['name']}.json", read_trace(item["name"]))
+    return {"dir": str(out), "traces": len(traces), "bytes": size}
 
 
 def run_blocking(mode: str, name: str, *, seed: int | None = None, robot_id: str = "",
@@ -563,6 +617,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--params", default="", help='算法参数 JSON，例如 \'{"ring_r":1200}\'')
     p.add_argument("--port", type=int, default=8800)
     p.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
+    p.add_argument("--export", default="", metavar="目录",
+                   help="不启服务器：把离线案例导出成静态网页到该目录（GitHub Pages "
+                        "这类静态托管用）；案例范围由 --seeds/--cases/--seed/--problem/"
+                        "--algorithm 决定")
     return p.parse_args()
 
 
@@ -597,6 +655,30 @@ def main() -> int:
     print("调试闸门：断点%s，延迟%s"
           % ("开" if dbg["breakpoint"]["enabled"] else "关",
              "开" if dbg["delay"]["enabled"] else "关"))
+
+    if args.export:
+        # 静态导出：先把案例同步跑完（不启线程、不启服务器），再写站点
+        try:
+            export_seeds = parse_seeds(args.seeds) if args.seeds.strip() else None
+        except ValueError as exc:
+            print(f"--seeds 解析失败：{exc}")
+            return 2
+        seeds = export_seeds if export_seeds is not None else [
+            args.seed + i for i in range(max(int(args.cases), 0))]
+        for i, seed in enumerate(seeds):
+            name = mock_name(args.problem, seed)
+            print(f"[导出 {i + 1}/{len(seeds)}] 生成 {name} ...")
+            stats = run_blocking("mock", name, seed=seed, algorithm=cli_algo,
+                                 params=cli_params, problem=args.problem)
+            if stats:
+                print(f"   清除 {stats['cleared']} 个，"
+                      f"平均定位清除时间 {stats['平均定位清除时间']:.1f} s")
+        info = export_static(Path(args.export))
+        print(f"静态网页已导出：{Path(info['dir']).resolve()}"
+              f"（{info['traces']} 局 trace，约 {info['bytes'] / 1024:.0f} KB）")
+        print(f"本地预览：python -m http.server -d {args.export} 8900  →  "
+              "http://127.0.0.1:8900/")
+        return 0
 
     if args.demo:
         try:

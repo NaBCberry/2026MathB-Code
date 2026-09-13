@@ -11,6 +11,7 @@
 | `step_gate.py` | 调试闸门：每步可加延迟、可停下来等网页点"下一步"（配置在 `config.json`） |
 | `webui.py` | 可视化 Web 服务（读取 trace，提供页面与 JSON 接口） |
 | `webui.html` | 可视化页面：频道状态表、圆形地图、行动日志、汇总指标 |
+| `webui_static.js` | **静态网页的"假后端"**：`webui.py --export` 导出时插进页面，把 `/api/*` 映射到预生成的 JSON（GitHub Pages 在线版就靠它） |
 | `archived/` | **归档区**：离线模拟器 `mock_arena.py`、连通性探测 `probe_simulator.py`、旧版 `robot_v1.py`（详见 `archived/README.md`） |
 | `traces/` | 每次会话的行为轨迹 JSONL（可由 WebUI 直接可视化） |
 | `logs/` | 每次运行的指令-响应 JSONL 日志 |
@@ -52,6 +53,10 @@ python webui.py --demo --seeds 27880,1031 --problem 4
 
 # 可视化：接真实模拟器跑一局，网页实时刷新
 python webui.py --run --robot-id <参赛队号>
+
+# 可视化：导出成纯静态网页（GitHub Pages 上的在线版就是这么生成的；不起服务、不联网）
+python webui.py --export site --seeds 1-6 --problem 4 --algorithm p4-v8-geoorder
+python -m http.server -d site 8900        # 浏览器打开 http://127.0.0.1:8900/
 
 # 单独产出 trace（不启网页）
 python trace_client.py --mode mock --seed 1 --out traces/mock-seed1.jsonl
@@ -151,6 +156,41 @@ python robot.py --robot-id demo --dry-run --cases 20 \
   "多一行又缩回去"。服务端靠**核对文件头那行 meta** 判断同名 trace 是否被新的一局覆盖
   （新一局可能一上来就比旧文件长，光看"文件变小"是抓不到的），一旦发现就从文件头重读，
   不会把两局的数据混在一起。
+
+## 在线网页：GitHub Actions 自动构建（GitHub Pages）
+
+仓库里有两个 workflow（`.github/workflows/`）：
+
+| workflow | 什么时候跑 | 做什么 |
+| --- | --- | --- |
+| `ci.yml` | push / PR / 手动触发 | 编译全部 `.py`、自检算法注册表、**10 套算法各跑一批离线自测**（`--dry-run`，不联网、不消耗模拟器测试次数，成绩单作为 artifact 上传）、无头起一次 WebUI 打 `/api/*` 接口、跑 `tools/bench.py` + `tools/plot_bench.py` |
+| `pages.yml` | push 到 `master`（相关文件有改动）/ 手动触发 | 用 `webui.py --export` 把 16 局离线案例导成**纯静态网页**，发布到 GitHub Pages |
+
+在线版地址：**https://nabcberry.github.io/2026MathB-Code/**
+
+打开就是平时那个 WebUI（地图 / 频道状态表 / 行动日志 / 汇总 / 算法说明），只是数据是
+**构建时**离线算好、再当静态文件发出去的，所以：
+
+- **能看**：下拉框里每一局预生成的案例（第三题 6 局、第四题 10 局），切换案例、刷新、
+  展开算法说明、算法参数框都照常；
+- **不能做**：生成新案例、离线案例、实机运行、断点单步 —— 这些必须有真跑着的 Python
+  进程。静态页会把对应按钮**自动禁用**并在顶部挂一条黄色提示（在线版的
+  `webui_static.js` 负责这件事）；要在网页上跑新案例，就在本地 `python webui.py`。
+
+本地预览静态版（和线上同一套产物）：
+
+```bash
+python webui.py --export site --seeds 1-6 --problem 3 --algorithm p3-baseline
+python webui.py --export site --seeds 1-6 --problem 4 --algorithm p4-v8-geoorder
+python -m http.server -d site 8900        # → http://127.0.0.1:8900/
+```
+
+多次 `--export` 会**累积**到同一个站点目录：案例写进 `--trace-dir`（CI 里是
+`.site-traces/`），页面与接口 JSON 写进 `--export` 指定的目录（CI 里是 `site/`）。
+导出内容 = `index.html`（原 `webui.html` + 静态假后端 `webui_static.js`）
++ `api/algorithms.json`（算法清单）、`api/traces.json`（案例清单）、
+`api/trace/<案例名>.json`（每一局的轨迹）。想让在线版多几局案例，改
+`.github/workflows/pages.yml` 里那三条 `--export` 的 `--seeds` 即可。
 
 ## 调试：每步延迟 / 断点单步
 

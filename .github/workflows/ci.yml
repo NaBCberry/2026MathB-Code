@@ -1,0 +1,218 @@
+name: Python CI
+
+# 把仓库里的 Python 程序在 GitHub 的机器上跑一遍：
+#   语法/注册表 → 10 套算法各跑一批离线自测 → 无头起一次 WebUI 打接口 → 评测与绘图。
+# 离线自测（--dry-run）不联网、不消耗模拟器测试次数，所以可以随便跑。
+
+on:
+  push:
+    branches: [master, "codex/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  syntax:
+    name: 语法与算法注册表
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 编译全部 Python 文件
+        run: python -m compileall -q .
+
+      - name: 算法注册表自检
+        run: |
+          python - <<'PY'
+          import algorithms
+
+          algorithms.load_all()
+          errors = algorithms.load_errors()
+          assert not errors, f"算法加载失败：{errors}"
+          specs = algorithms.list_specs()
+          assert specs, "algorithms/ 下没有可用算法"
+          for spec in specs:
+              print(f"{spec['id']:<18} {spec['problem']:<6} {spec['name']}")
+          print(f"共 {len(specs)} 套算法，默认 {algorithms.DEFAULT_ID}")
+          PY
+
+  dryrun:
+    name: 离线自测（${{ matrix.algorithm }}）
+    runs-on: ubuntu-latest
+    needs: syntax
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {problem: 3, algorithm: p3-baseline,       cases: 50}
+          - {problem: 3, algorithm: p3-v2,             cases: 50}
+          - {problem: 4, algorithm: p4-directional,    cases: 50}
+          - {problem: 4, algorithm: p4-v2-receding,    cases: 50}
+          - {problem: 4, algorithm: p4-v3-residual,    cases: 50}
+          - {problem: 4, algorithm: p4-v4-ring1950,    cases: 30}
+          - {problem: 4, algorithm: p4-v5-ring1930,    cases: 30}
+          - {problem: 4, algorithm: p4-v6-policy,      cases: 30}
+          - {problem: 4, algorithm: p4-v7-stationgate, cases: 30}
+          - {problem: 4, algorithm: p4-v8-geoorder,    cases: 50}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 跑离线自测
+        run: |
+          set -o pipefail
+          python robot.py --robot-id ci --dry-run \
+            --problem ${{ matrix.problem }} \
+            --algorithm ${{ matrix.algorithm }} \
+            --cases ${{ matrix.cases }} \
+            --log-dir "" \
+            --quiet | tee "${{ matrix.algorithm }}.txt"
+          grep -q "清除比例" "${{ matrix.algorithm }}.txt"
+
+      - name: 结果是每套算法一份的成绩单
+        uses: actions/upload-artifact@v4
+        with:
+          name: dryrun-${{ matrix.algorithm }}
+          path: ${{ matrix.algorithm }}.txt
+          retention-days: 14
+
+  webui:
+    name: WebUI 无头自检
+    runs-on: ubuntu-latest
+    needs: syntax
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 起服务 → 打接口 → 关服务
+        run: |
+          python webui.py --demo --cases 2 --no-browser --port 8813 > webui.log 2>&1 &
+          python - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          BASE = "http://127.0.0.1:8813"
+          last = None
+
+          def get(path):
+              with urllib.request.urlopen(BASE + path, timeout=10) as resp:
+                  return resp.status, resp.read()
+
+          for _ in range(30):
+              try:
+                  status, html = get("/")
+                  break
+              except Exception as exc:            # 服务还在起来
+                  last = exc
+                  time.sleep(1)
+          else:
+              raise SystemExit(f"WebUI 起不来：{last}")
+          assert status == 200 and len(html) > 10000, (status, len(html))
+          print("首页 OK：", status, len(html), "字节")
+
+          _, raw = get("/api/algorithms")
+          algos = json.loads(raw)
+          ids = [a["id"] for a in algos["algorithms"]]
+          assert ids, "算法清单是空的"
+          print("算法：", len(ids), ids)
+
+          traces = []
+          for _ in range(30):
+              _, raw = get("/api/traces")
+              traces = json.loads(raw)
+              if traces:
+                  break
+              time.sleep(1)
+          assert traces, "trace 目录一直是空的"
+          print("trace：", [t["name"] for t in traces])
+
+          _, raw = get("/api/trace?name=" + traces[0]["name"])
+          payload = json.loads(raw)
+          assert payload.get("events"), "trace 里没有动作"
+          print("第一局事件数：", len(payload["events"]))
+          PY
+          kill %1 2>/dev/null || true
+          echo "----- webui 进程输出 -----"
+          cat webui.log
+
+      - name: 静态导出自检（GitHub Pages 用的同一套产物）
+        run: |
+          python webui.py --export site --trace-dir .site-traces \
+            --seeds 1-2 --problem 3 > /dev/null
+          python - <<'PY'
+          import json
+          import pathlib
+
+          site = pathlib.Path("site")
+          index = (site / "index.html").read_text(encoding="utf-8")
+          assert "webui_static.js" in index, "静态假后端没注入进去"
+          assert (site / "webui_static.js").exists()
+          traces = json.loads((site / "api/traces.json").read_text(encoding="utf-8"))
+          assert len(traces) == 2, traces
+          for item in traces:
+              file = site / "api" / "trace" / (item["name"] + ".json")
+              payload = json.loads(file.read_text(encoding="utf-8"))
+              assert payload["events"], item["name"]
+          print("静态站点 OK：", [t["name"] for t in traces])
+          PY
+
+      - name: 上传 WebUI 日志与静态站点
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webui-static-site
+          path: |
+            webui.log
+            site
+          retention-days: 14
+
+  tools:
+    name: 评测工具（bench + 绘图）
+    runs-on: ubuntu-latest
+    needs: syntax
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装绘图依赖
+        run: python -m pip install --disable-pip-version-check -r requirements-plot.txt
+
+      - name: 跑一批离线评测（第四题 30 例）
+        run: |
+          python tools/bench.py --algorithm p4-v8-geoorder --problem 4 \
+            --cases 30 --out out/bench/p4-v8-geoorder-p4-30.csv
+
+      - name: 用仓库里的 bench/ 数据重绘评测图
+        run: python tools/plot_bench.py --bench-dir bench --fig-dir out/figs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-and-figs
+          path: |
+            out/bench
+            out/figs
+          retention-days: 14

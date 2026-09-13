@@ -1,0 +1,94 @@
+name: 静态 WebUI（GitHub Pages）
+
+# 把 WebUI 发布成一个可以直接打开的网页。
+#
+# 网页本体（webui.html）是纯前端、数据走 /api/*；GitHub Pages 只能放静态文件、没有
+# Python 进程，所以这里在构建阶段用 `python webui.py --export` 把离线案例预先算好，
+# 连页面一起导出成静态站点（webui_static.js 就是那个"假后端"），再整体发到 Pages。
+#
+# 能看：预先生成的每一局 trace（地图 / 频道表 / 日志 / 汇总 / 算法说明），下拉切案例。
+# 不能做：生成新案例、实机运行、断点单步 —— 静态页会把对应按钮禁用并提示。
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "webui.py"
+      - "webui.html"
+      - "webui_static.js"
+      - "algorithms/**"
+      - "trace_client.py"
+      - "step_gate.py"
+      - "archived/mock_arena.py"
+      - "config.json"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 生成静态站点
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 生成离线案例并导出静态网页
+        run: |
+          # 每次 --export 都往同一个站点里追加几局：第三题默认算法 6 局、
+          # 第四题推荐算法（p4-v8-geoorder）6 局、第四题导航算法 4 局做对照。
+          python webui.py --export site --trace-dir .site-traces \
+            --seeds 1-6 --problem 3 --algorithm p3-baseline
+          python webui.py --export site --trace-dir .site-traces \
+            --seeds 1-6 --problem 4 --algorithm p4-v8-geoorder
+          python webui.py --export site --trace-dir .site-traces \
+            --seeds 7-10 --problem 4 --algorithm p4-directional
+          du -sh site
+
+      - name: 检查产物
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+
+          site = pathlib.Path("site")
+          assert (site / "index.html").exists(), "index.html 缺失"
+          assert (site / "webui_static.js").exists(), "webui_static.js 缺失"
+          traces = json.loads((site / "api/traces.json").read_text(encoding="utf-8"))
+          assert len(traces) == 16, f"应该有 16 局案例，实际 {len(traces)}"
+          for item in traces:
+              file = site / "api" / "trace" / (item["name"] + ".json")
+              assert file.exists(), f"{item['name']} 没导出"
+              assert json.loads(file.read_text(encoding="utf-8"))["events"], item["name"]
+          print("\n".join(sorted(t["name"] for t in traces)))
+          PY
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    name: 发布到 GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
